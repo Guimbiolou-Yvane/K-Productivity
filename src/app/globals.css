@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #F4F4F4;
+  --foreground: #000000;
+}
+
+html, body {
+  overflow-x: hidden;
+  width: 100%;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+}
+
+@layer utilities {
+  .neo-btn {
+    @apply uppercase font-bold border-4 border-foreground bg-primary text-foreground shadow-neo transition-all px-6 py-3 cursor-pointer;
+  }
+  @media (hover: hover) {
+    .neo-btn:hover {
+      @apply translate-x-[2px] translate-y-[2px] shadow-none;
+    }
+  }
+  .neo-btn:active {
+    @apply translate-x-[4px] translate-y-[4px] shadow-none;
+  }
+  .neo-card {
+    @apply border-4 border-foreground bg-surface shadow-neo p-4;
+  }
+  .neo-input {
+    @apply border-4 border-foreground bg-surface px-4 py-3 outline-none focus:ring-4 focus:ring-primary focus:border-foreground transition-all;
+  }
+  .neo-checkbox {
+    @apply w-8 h-8 border-4 border-foreground flex items-center justify-center cursor-pointer transition-colors;
+  }
+}
