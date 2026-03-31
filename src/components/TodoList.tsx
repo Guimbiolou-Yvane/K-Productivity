@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import { Todo } from "@/lib/models/todo";
 import { todoService } from "@/lib/services/todoService";
-import { Plus, Trash2, Check, Clock } from "lucide-react";
+import { Plus, Trash2, Check, Clock, ChevronDown, ListTodo } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import SectionInfo from "./SectionInfo";
+import { supabase } from "@/lib/supabase/client";
 
 interface TodoListProps {
   profileUserId?: string;
@@ -18,7 +19,23 @@ export default function TodoList({
 }: TodoListProps = {}) {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [newTodo, setNewTodo] = useState("");
+  const [newTime, setNewTime] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [isCollapsed, setIsCollapsed] = useState(true);
+
+  // Persistence du state isCollapsed
+  useEffect(() => {
+    const saved = localStorage.getItem("todoListCollapsed");
+    if (saved !== null) {
+      setIsCollapsed(saved === "true");
+    }
+  }, []);
+
+  const toggleCollapse = () => {
+    const newState = !isCollapsed;
+    setIsCollapsed(newState);
+    localStorage.setItem("todoListCollapsed", String(newState));
+  };
 
   useEffect(() => {
     loadTodos();
@@ -36,6 +53,20 @@ export default function TodoList({
     }
   };
 
+  // Realtime : synchronise les todos entre onglets
+  useEffect(() => {
+    if (readOnly) return;
+    const channel = supabase
+      .channel("todos-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "todos" },
+        () => { loadTodos(); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [readOnly]);
+
   const handleAddTodo = async (e: React.FormEvent) => {
     e.preventDefault();
     if (readOnly || !newTodo.trim()) return;
@@ -47,14 +78,57 @@ export default function TodoList({
         id: tempId,
         user_id: "temp",
         title: newTodo,
+        time: newTime || undefined,
         is_completed: false,
         created_at: new Date().toISOString(),
       };
       setTodos([...todos, optimisticTodo]);
+      const savedTitle = newTodo;
+      const savedTime = newTime || undefined;
       setNewTodo("");
+      setNewTime("");
 
-      const added = await todoService.addTodo(optimisticTodo.title);
+      const added = await todoService.addTodo(savedTitle, savedTime);
       setTodos((current) => current.map((t) => (t.id === tempId ? added : t)));
+
+      // Programmer les notifications si une heure est définie
+      if (savedTime && added.user_id) {
+        const now = new Date();
+        const [h, m] = savedTime.split(":").map(Number);
+
+        // Rappel 10 min avant
+        const beforeTime = new Date();
+        beforeTime.setHours(h, m, 0, 0);
+        beforeTime.setMinutes(beforeTime.getMinutes() - 10);
+        if (beforeTime > now) {
+          fetch("/api/push/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: added.user_id,
+              title: `📌 ${savedTitle} dans 10 min`,
+              body: `Prépare-toi ! Ta tâche "${savedTitle}" approche 🔥`,
+              sendAfter: beforeTime.toISOString(),
+            }),
+          }).catch(() => {});
+        }
+
+        // Rappel à l'heure exacte
+        const exactTime = new Date();
+        exactTime.setHours(h, m, 0, 0);
+        if (exactTime > now) {
+          fetch("/api/push/send", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              userId: added.user_id,
+              title: `📌 C'est l'heure : ${savedTitle} !`,
+              body: `C'est maintenant ! Lance-toi sur "${savedTitle}" ✅`,
+              sendAfter: exactTime.toISOString(),
+            }),
+          }).catch(() => {});
+        }
+      }
     } catch (error) {
       console.error("Erreur lors de l'ajout :", error);
       await loadTodos(); // rollback
@@ -90,19 +164,44 @@ export default function TodoList({
     }
   };
 
-  // Les todo non complétés d'abord, puis complétés
+  /**
+   * Formatage de l'heure affichée : "14:30" → "14h30", "09:00" → "9h00"
+   */
+  const formatTime = (time: string) => {
+    const [h, m] = time.split(":");
+    return `${parseInt(h)}h${m}`;
+  };
+
+  // Tri : non complétés d'abord, puis par heure (les tâches avec heure en premier), puis par date
   const sortedTodos = [...todos].sort((a, b) => {
-    if (a.is_completed === b.is_completed) {
-      return (
-        new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
+    if (a.is_completed !== b.is_completed) {
+      return a.is_completed ? 1 : -1;
     }
-    return a.is_completed ? 1 : -1;
+    // Parmi les non complétés : ceux avec heure d'abord, triés par heure
+    if (!a.is_completed) {
+      if (a.time && b.time) return a.time.localeCompare(b.time);
+      if (a.time && !b.time) return -1;
+      if (!a.time && b.time) return 1;
+    }
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
   });
 
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 md:px-8 mt-4 mb-12">
-      <div className="flex items-center gap-3 mb-4 pl-2 border-l-8 border-foreground">
+    <div className="w-full max-w-6xl mx-auto px-4 md:px-8 mt-4 mb-8">
+      <button
+        onClick={toggleCollapse}
+        className="flex items-center gap-3 mb-4 w-full text-left group cursor-pointer"
+      >
+        <div className="w-9 h-9 flex items-center justify-center bg-orange-400 dark:bg-orange-400/30 border-[3px] border-foreground dark:border-gray-500 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(100,100,100,0.3)] shrink-0">
+          <ListTodo size={18} strokeWidth={3} className="dark:text-gray-300" />
+        </div>
+        <motion.div
+          animate={{ rotate: isCollapsed ? -90 : 0 }}
+          transition={{ type: "spring", stiffness: 400, damping: 25 }}
+          className="shrink-0"
+        >
+          <ChevronDown size={20} strokeWidth={3} className="text-foreground/50 group-hover:text-foreground transition-colors" />
+        </motion.div>
         <h2 className="text-xl sm:text-2xl font-black uppercase text-foreground">
           Objectifs temporaires
         </h2>
@@ -117,8 +216,17 @@ export default function TodoList({
             Durée de 24h
           </span>
         </div>
-      </div>
+      </button>
 
+      <AnimatePresence initial={false}>
+        {!isCollapsed && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="overflow-hidden"
+          >
       <div className="bg-surface border-4 border-foreground shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] p-4 md:p-6 pb-2">
         {/* FORMULAIRE D'AJOUT */}
         {!readOnly && (
@@ -134,16 +242,36 @@ export default function TodoList({
               onChange={(e) => setNewTodo(e.target.value)}
               disabled={isLoading}
             />
-            <motion.button
-              type="submit"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.95 }}
-              disabled={isLoading || !newTodo.trim()}
-              className="bg-black hover:bg-neutral-800 text-white font-black uppercase border-4 border-foreground px-6 py-3 flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-            >
-              <Plus strokeWidth={4} size={20} />
-              AJOUTER
-            </motion.button>
+            <div className="flex gap-3 sm:gap-4">
+              <div className="relative">
+                <input
+                  type="time"
+                  className="neo-input !p-3 text-base font-bold w-[130px] cursor-pointer"
+                  value={newTime}
+                  onChange={(e) => setNewTime(e.target.value)}
+                  disabled={isLoading}
+                />
+                {newTime && (
+                  <button
+                    type="button"
+                    onClick={() => setNewTime("")}
+                    className="absolute -top-2 -right-2 w-5 h-5 bg-red-400 border-2 border-foreground text-foreground flex items-center justify-center text-xs font-black leading-none shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[1px] active:translate-y-[1px]"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <motion.button
+                type="submit"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.95 }}
+                disabled={isLoading || !newTodo.trim()}
+                className="bg-black hover:bg-neutral-800 text-white font-black uppercase border-4 border-foreground px-6 py-3 flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+              >
+                <Plus strokeWidth={4} size={20} />
+                <span className="hidden sm:inline">AJOUTER</span>
+              </motion.button>
+            </div>
           </form>
         )}
 
@@ -195,11 +323,25 @@ export default function TodoList({
                     )}
                   </button>
 
-                  <span
-                    className={`flex-1 font-black text-sm sm:text-base leading-tight ${todo.is_completed ? "line-through text-foreground/50" : "text-foreground"}`}
-                  >
-                    {todo.title}
-                  </span>
+                  <div className="flex-1 min-w-0 flex items-center gap-2">
+                    <span
+                      className={`font-black text-sm sm:text-base leading-tight truncate ${todo.is_completed ? "line-through text-foreground/50" : "text-foreground"}`}
+                    >
+                      {todo.title}
+                    </span>
+                    {todo.time && (
+                      <span
+                        className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 border-2 border-foreground text-[11px] font-black uppercase ${
+                          todo.is_completed
+                            ? "bg-gray-200 text-foreground/40"
+                            : "bg-surface text-foreground shadow-[1px_1px_0px_0px_rgba(0,0,0,1)]"
+                        }`}
+                      >
+                        <Clock size={10} strokeWidth={3} />
+                        {formatTime(todo.time)}
+                      </span>
+                    )}
+                  </div>
 
                   {!readOnly && (
                     <motion.button
@@ -222,6 +364,9 @@ export default function TodoList({
           </div>
         )}
       </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

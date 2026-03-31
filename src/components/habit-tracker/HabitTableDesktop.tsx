@@ -113,21 +113,24 @@ export default function HabitTableDesktop({
               </div>
               
               {availableCategories.length > 2 && (
-                <div className="flex flex-wrap items-center gap-1.5 w-full mt-2">
-                  <span className="text-[10px] font-black uppercase text-foreground/60 mr-1">Filtre:</span>
-                  {availableCategories.map((cat) => (
-                    <button
-                      key={cat}
-                      onClick={() => setCategoryFilter(cat as any)}
-                      className={`px-1.5 py-0.5 font-black text-[9px] border-2 border-foreground uppercase transition-all ${
-                        categoryFilter === cat
-                          ? "bg-primary shadow-none translate-x-[2px] translate-y-[2px] text-foreground"
-                          : "bg-surface shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-foreground/70 hover:bg-primary/20 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none"
-                      }`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-2 w-full mt-2">
+                  <span className="text-[10px] font-black uppercase text-foreground/60 whitespace-nowrap shrink-0">Filtrer par :</span>
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                    {availableCategories.map((cat) => (
+                      <motion.button
+                        key={cat}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => setCategoryFilter(cat as any)}
+                        className={`px-2.5 py-1 font-black text-[10px] border-[3px] border-foreground uppercase whitespace-nowrap transition-all shrink-0 ${
+                          categoryFilter === cat
+                            ? "bg-foreground text-background shadow-none"
+                            : "bg-surface shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-foreground/70 hover:brightness-95 active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+                        }`}
+                      >
+                        {cat}
+                      </motion.button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

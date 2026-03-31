@@ -9,6 +9,17 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-// Client Supabase côté navigateur (Browser Client)
-// Utilisé dans les composants "use client" et les pages côté client
-export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
+// Client Supabase côté navigateur avec Realtime activé explicitement
+export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey, {
+  realtime: {
+    params: {
+      eventsPerSecond: 10,
+    },
+  },
+  global: {
+    headers: {
+      "x-application-name": "k-productivity",
+    },
+  },
+});
+

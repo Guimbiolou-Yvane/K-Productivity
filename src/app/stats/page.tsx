@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
+import { BarChart2 } from "lucide-react";
 import { habitService } from "@/lib/services/habitService";
 import {
   StreakStats,
@@ -112,21 +113,31 @@ export default function StatsPage() {
   }
 
   return (
-    <motion.div 
-      initial={{ opacity: 0, y: 30 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      className="min-h-screen p-4 md:p-8 flex flex-col items-center max-w-6xl mx-auto font-sans pb-32 overflow-x-hidden"
-    >
-      {/* HEADER */}
-      <div className="w-full flex flex-col justify-start mb-8 border-b-8 border-foreground pb-4">
-        <h1 className="text-3xl md:text-5xl font-black uppercase tracking-tighter shadow-sm mb-2">Statistiques</h1>
-        <p className="font-bold text-foreground/60 text-sm sm:text-base leading-snug">
-          Garde un œil sur ta régularité et analyse tes performances globales pour repousser tes limites.
-        </p>
+    <>
+      {/* HEADER sticky hors du motion.div pour éviter le conflit overflow */}
+      <div className="sticky top-0 z-30 bg-surface border-b-4 border-foreground w-full">
+        <div className="max-w-6xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 flex items-center justify-center bg-primary border-[3px] border-foreground shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] shrink-0">
+              <BarChart2 size={18} strokeWidth={3} />
+            </div>
+            <div>
+              <h1 className="text-xl font-black uppercase tracking-tight leading-none">Statistiques</h1>
+              <p className="font-bold text-foreground/50 text-xs mt-0.5 leading-snug hidden sm:block">
+                Régularité, performances, et progression globale.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="w-full flex flex-col gap-8">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+        className="min-h-screen flex flex-col items-center max-w-6xl mx-auto font-sans pb-32 w-full"
+      >
+      <div className="w-full px-4 md:px-8 py-6 flex flex-col gap-8">
         <StreakSection
           currentStreak={streak.current}
           bestStreak={streak.best}
@@ -151,6 +162,7 @@ export default function StatsPage() {
           onMonthChange={setTargetMonth}
         />
       </div>
-    </motion.div>
+      </motion.div>
+    </>
   );
 }

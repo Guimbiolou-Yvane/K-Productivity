@@ -258,6 +258,80 @@ class SharedHabitService {
   }
 
   /**
+   * Quitter un groupe (la BDD nettoiera le groupe s'il reste < 2 membres grâce au trigger)
+   */
+  async leaveGroup(groupId: string) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Utilisateur non connecté");
+
+    const { error } = await supabase.from("shared_group_members").delete().eq("group_id", groupId).eq("user_id", user.id);
+    if (error) throw error;
+  }
+
+  /**
+   * Modifier le nom et la liste des membres d'un groupe
+   */
+  async updateGroup(groupId: string, name: string, userIds: string[]) {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Utilisateur non connecté");
+
+    // 1. MAJ du nom
+    const { error: updateError } = await supabase.from("shared_groups").update({ name }).eq("id", groupId);
+    if (updateError) throw updateError;
+
+    // 2. MAJ des membres
+    const { data: currentMembers } = await supabase.from("shared_group_members").select("user_id").eq("group_id", groupId);
+    const currentMemberIds = currentMembers?.map(m => m.user_id) || [];
+    
+    // Le current user reste
+    const newMemberIds = Array.from(new Set([user.id, ...userIds]));
+    const toAdd = newMemberIds.filter(id => !currentMemberIds.includes(id));
+    const toRemove = currentMemberIds.filter(id => !newMemberIds.includes(id));
+
+    if (toRemove.length > 0) {
+      await supabase.from("shared_group_members").delete().eq("group_id", groupId).in("user_id", toRemove);
+    }
+    if (toAdd.length > 0) {
+      await supabase.from("shared_group_members").insert(
+        toAdd.map(id => ({ group_id: groupId, user_id: id }))
+      );
+    }
+  }
+
+  /**
+   * Met à jour un objectif partagé
+   */
+  async updateSharedHabit(
+    habitId: string,
+    name: string,
+    category: HabitCategory,
+    frequency: string[],
+    color: string | undefined,
+    icon: string | undefined,
+    startDate: string,
+    endDate: string,
+    time: string | undefined,
+  ) {
+    const target_month = startDate.substring(0, 7);
+    const { error } = await supabase
+      .from("shared_habits")
+      .update({
+        name,
+        category,
+        frequency,
+        color,
+        icon,
+        time,
+        start_date: startDate,
+        end_date: endDate,
+        target_month,
+      })
+      .eq("id", habitId);
+
+    if (error) throw error;
+  }
+
+  /**
    * Valider ou Invalider (Toggle) un objectif partagé pour l'utilisateur courant
    */
   async toggleLog(sharedHabitId: string, customDate: string) {
@@ -313,6 +387,43 @@ class SharedHabitService {
         }
       } catch {}
     }
+  }
+  /**
+   * Réinitialiser tous les objectifs communs (supprime les logs partagés et quitte tous les groupes)
+   */
+  async resetAllSharedHabits(): Promise<void> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Utilisateur non connecté");
+
+    // 1. Supprimer tous les logs d'objectifs partagés de l'utilisateur
+    const { error: logsError } = await supabase
+      .from("shared_habit_logs")
+      .delete()
+      .eq("user_id", user.id);
+    if (logsError) throw logsError;
+
+    // 2. Récupérer les groupes dont l'utilisateur est le créateur
+    const { data: ownedGroups } = await supabase
+      .from("shared_groups")
+      .select("id")
+      .eq("creator_id", user.id);
+
+    // 3. Supprimer les groupes créés par l'utilisateur (cascade supprime membres + habitudes + logs)
+    if (ownedGroups && ownedGroups.length > 0) {
+      const groupIds = ownedGroups.map(g => g.id);
+      const { error: deleteGroupsError } = await supabase
+        .from("shared_groups")
+        .delete()
+        .in("id", groupIds);
+      if (deleteGroupsError) throw deleteGroupsError;
+    }
+
+    // 4. Quitter les groupes restants (ceux dont l'utilisateur est membre mais pas créateur)
+    const { error: leaveError } = await supabase
+      .from("shared_group_members")
+      .delete()
+      .eq("user_id", user.id);
+    if (leaveError) throw leaveError;
   }
 }
 

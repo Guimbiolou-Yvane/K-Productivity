@@ -4,6 +4,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Mail, Lock, User, Eye, EyeOff, ArrowRight, LogIn } from "lucide-react";
 import { authService } from "@/lib/services/authService";
+import { supabase } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 
 type AuthMode = "login" | "signup";
@@ -60,7 +61,16 @@ export default function LoginPage() {
           setSuccess("Un email de confirmation a été envoyé à " + email + ". Vérifiez votre boîte de réception (et les spams) pour activer votre compte.");
         }
       } else {
-        await authService.signInWithEmail(email, password);
+        const loginResult = await authService.signInWithEmail(email, password);
+
+        // Détection automatique du fuseau horaire et sauvegarde dans le profil
+        try {
+          const detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          if (detectedTz && loginResult.user) {
+            supabase.from("profiles").update({ timezone: detectedTz }).eq("id", loginResult.user.id).then();
+          }
+        } catch {}
+
         router.push("/");
       }
     } catch (err: any) {

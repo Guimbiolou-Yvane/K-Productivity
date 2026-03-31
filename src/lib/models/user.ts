@@ -6,6 +6,7 @@ export interface UserProfile {
   username: string; // Pseudo affiché
   avatar_url?: string; // Lien vers l'image de profil (optionnel)
   profile_widgets?: string[]; // Widgets affichés sur le profil
+  timezone?: string; // Fuseau horaire IANA (ex: "Europe/Paris", "Africa/Douala")
 
   // === STATISTIQUES GLOBALES ===
   longest_streak: number; // Record absolu (Stocké ici pour accès rapide)

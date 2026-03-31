@@ -53,9 +53,9 @@ export async function middleware(request: NextRequest) {
   return supabaseResponse;
 }
 
-// Appliquer le middleware à toutes les routes SAUF les fichiers statiques, PWA et OneSignal
+// Appliquer le middleware à toutes les routes SAUF les fichiers statiques, PWA, OneSignal et API
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|sw\\.js|workbox-.*|worker-.*|manifest\\.json|push/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|js|json)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/|sw\\.js|workbox-.*|worker-.*|manifest\\.json|push/|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|js|json)$).*)",
   ],
 };

@@ -25,15 +25,21 @@ export const todoService = {
   },
 
   // Add a new To-Do item
-  async addTodo(title: string): Promise<Todo> {
+  async addTodo(title: string, time?: string): Promise<Todo> {
     const {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) throw new Error("User not authenticated");
 
+    const insertData: { title: string; user_id: string; time?: string } = {
+      title,
+      user_id: user.id,
+    };
+    if (time) insertData.time = time;
+
     const { data, error } = await supabase
       .from("todos")
-      .insert({ title, user_id: user.id })
+      .insert(insertData)
       .select()
       .single();
 

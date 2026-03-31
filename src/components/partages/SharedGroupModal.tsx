@@ -1,17 +1,20 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { X, Users } from "lucide-react";
+import { X, Users, LogOut } from "lucide-react";
 import { friendService } from "@/lib/services/friendService";
 import { UserProfile } from "@/lib/models/user";
 import Image from "next/image";
+import { SharedGroup } from "@/lib/models/sharedHabit";
 
 interface SharedGroupModalProps {
   isOpen: boolean;
   onClose: () => void;
+  groupToEdit?: { group: SharedGroup, members: UserProfile[] } | null;
   onSave: (name: string, invitedFriends: string[]) => void;
+  onLeaveGroup?: () => void;
 }
 
-export default function SharedGroupModal({ isOpen, onClose, onSave }: SharedGroupModalProps) {
+export default function SharedGroupModal({ isOpen, onClose, groupToEdit, onSave, onLeaveGroup }: SharedGroupModalProps) {
   const [name, setName] = useState("");
   const [friends, setFriends] = useState<UserProfile[]>([]);
   const [selectedFriends, setSelectedFriends] = useState<string[]>([]);
@@ -20,10 +23,17 @@ export default function SharedGroupModal({ isOpen, onClose, onSave }: SharedGrou
   useEffect(() => {
     if (isOpen) {
       loadFriends();
-      setName("");
-      setSelectedFriends([]);
+      if (groupToEdit) {
+        setName(groupToEdit.group.name);
+        // exclude the current user from selected friends so they don't uncheck themselves?
+        // Actually, the current user is not in "friends", so it's fine. 
+        setSelectedFriends(groupToEdit.members.map(m => m.id));
+      } else {
+        setName("");
+        setSelectedFriends([]);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, groupToEdit]);
 
   const loadFriends = async () => {
     try {
@@ -76,11 +86,24 @@ export default function SharedGroupModal({ isOpen, onClose, onSave }: SharedGrou
             <X strokeWidth={4} />
           </motion.button>
           
-          <div className="flex items-center justify-between mb-4 border-b-4 border-foreground pb-2 shrink-0">
-            <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight flex items-center gap-2">
-              <Users size={24} strokeWidth={3} />
-              Nouveau Groupe
+          <div className="flex items-center justify-between mb-4 border-b-4 border-foreground pb-2 shrink-0 gap-2">
+            <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight flex items-center gap-2 pr-2">
+              <Users size={24} strokeWidth={3} className="shrink-0" />
+              {groupToEdit ? "Modifier Groupe" : "Nouveau Groupe"}
             </h2>
+            {groupToEdit && onLeaveGroup && (
+              <motion.button 
+                whileHover={{ scale: 1.1, rotate: -5 }}
+                whileTap={{ scale: 0.9 }}
+                type="button"
+                onClick={onLeaveGroup}
+                className="bg-red-500 text-white border-2 border-foreground p-1.5 sm:p-2 hover:bg-red-600 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all cursor-pointer shrink-0 mr-2 sm:mr-6"
+                aria-label="Quitter le groupe"
+                title="Quitter le groupe"
+              >
+                <LogOut strokeWidth={3} size={20} />
+              </motion.button>
+            )}
           </div>
           
           <form onSubmit={handleSubmit} className="flex flex-col gap-6 overflow-y-auto pr-2 pb-2">
@@ -139,7 +162,7 @@ export default function SharedGroupModal({ isOpen, onClose, onSave }: SharedGrou
               disabled={!name.trim() || selectedFriends.length === 0}
               className="neo-btn bg-primary mt-2 disabled:opacity-50 disabled:cursor-not-allowed mx-auto w-11/12"
             >
-              Envoyer l'invitation
+              {groupToEdit ? "Enregistrer" : "Envoyer l'invitation"}
             </button>
           </form>
         </motion.div>

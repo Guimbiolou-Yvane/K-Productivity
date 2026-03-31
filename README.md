@@ -8,7 +8,7 @@
 
 **Karisma Productivity** est une application web progressive (PWA) qui permet aux utilisateurs de créer des objectifs mensuels récurrents (habits), de les cocher quotidiennement, de suivre leurs statistiques (streaks, taux de réussite, calendrier mensuel), et de gérer des tâches temporaires (todos) à durée de vie de 24h.
 
-L'application inclut un système d'authentification complet (email/password + OAuth Google/Facebook), un système de profils utilisateurs, une recherche d'amis, et une page de paramètres.
+L'application inclut un système d'authentification complet (email/password + OAuth Google/Facebook), un système de profils utilisateurs, système de liste d'amis complet avec invitations, la possibilité de créer des **groupes avec des objectifs partagés**, l'envoi de **notifications Push (rappels automatiques via OneSignal)**, et une page de paramètres avancée.
 
 ---
 
@@ -25,6 +25,7 @@ L'application inclut un système d'authentification complet (email/password + OA
 | **Icônes**        | Lucide React                   | 0.577.0                                           |
 | **Backend / BDD** | Supabase (Auth + PostgreSQL)   | @supabase/supabase-js 2.98.0, @supabase/ssr 0.9.0 |
 | **PWA**           | @ducanh2912/next-pwa           | 10.2.9                                            |
+| **Notifications** | OneSignal (react-onesignal)    | 3.5.1                                             |
 | **Utilitaires**   | date-fns, clsx, tailwind-merge | —                                                 |
 
 ---
@@ -45,6 +46,10 @@ Karisma Productivity/
 │   │   ├── layout.tsx         # Layout racine (Montserrat font, Navigation)
 │   │   ├── page.tsx           # Page d'accueil (HabitTracker + TodoList)
 │   │   ├── globals.css        # Styles globaux + utilities néo-brutalistes
+│   │   │
+│   │   ├── api/
+│   │   │   ├── cron/remind/   # Cron Job Vercel (notifications journalières)
+│   │   │   └── push/send/     # Envoi direct via API OneSignal
 │   │   │
 │   │   ├── login/
 │   │   │   └── page.tsx       # Page de connexion / inscription
@@ -79,10 +84,11 @@ Karisma Productivity/
 │   │   │   └── todo.ts        # Interface Todo
 │   │   │
 │   │   ├── services/
-│   │   │   ├── authService.ts     # Authentification (signUp, signIn, OAuth, profil, mot de passe, listeners)
-│   │   │   ├── habitService.ts    # CRUD Habits + Statistiques (streak, logs récents, stats mensuelles, taux de réussite)
-│   │   │   ├── todoService.ts     # CRUD Todos (fetch, add, toggle, delete)
-│   │   │   └── friendService.ts   # Recherche d'utilisateurs par username, récupération profil par ID
+│   │   │   ├── authService.ts        # Authentification (signUp, signIn, OAuth, profil, mot de passe, listeners)
+│   │   │   ├── habitService.ts       # CRUD Habits + Statistiques complètes
+│   │   │   ├── todoService.ts        # CRUD Todos (fetch, add, toggle, delete)
+│   │   │   ├── friendService.ts      # Recherche, demandes d'amis, consultation amis
+│   │   │   └── sharedHabitService.ts # Groupes, invitations, habitudes partagées et progression inter-membres
 │   │   │
 │   │   └── supabase/
 │   │       ├── client.ts      # Client Supabase côté navigateur (createBrowserClient)
@@ -96,9 +102,10 @@ Karisma Productivity/
 │   ├── seed.sql               # Script de peuplement (3 habitudes + logs + todos de test)
 │   └── migrations/
 │       ├── 001_update_handle_new_user.sql    # Trigger anti-fantômes (profil créé à la confirmation email)
-│       ├── 002_cleanup_ghost_users.sql       # Nettoyage one-shot des utilisateurs non confirmés
 │       ├── 003_temporary_todos.sql           # Création table todos + trigger auto-cleanup 24h
-│       └── 004_monthly_habits.sql            # Ajout colonne target_month sur habits
+│       ├── ...                               # Différentes modifications RLS & colonnes
+│       ├── 010_friendships.sql               # Ajout du système d'amitié (demandes, acceptations, pending)
+│       └── 012_shared_habits.sql             # Groupes partagés et objectifs multi-utilisateurs
 │
 ├── DesignUI.md                # Charte graphique Néo-Brutalisme (couleurs, typo, formes, ombres)
 ├── Motion.md                  # Guide des bonnes pratiques d'animation avec Motion v12
@@ -116,12 +123,17 @@ Karisma Productivity/
 
 ### Tables
 
-| Table            | Description                                    | Clés étrangères                                       |
-| ---------------- | ---------------------------------------------- | ----------------------------------------------------- |
-| **`profiles`**   | Profil utilisateur (lié à `auth.users`)        | `id` → `auth.users(id)` ON DELETE CASCADE             |
-| **`habits`**     | Objectifs mensuels récurrents                  | `user_id` → `profiles(id)` ON DELETE CASCADE          |
-| **`habit_logs`** | Logs de complétion journalière                 | `habit_id` → `habits(id)`, `user_id` → `profiles(id)` |
-| **`todos`**      | Tâches temporaires (auto-supprimées après 24h) | `user_id` → `profiles(id)` ON DELETE CASCADE          |
+| Table                      | Description                                    | Clés étrangères                                       |
+| -------------------------- | ---------------------------------------------- | ----------------------------------------------------- |
+| **`profiles`**             | Profil utilisateur (lié à `auth.users`)        | `id` → `auth.users(id)` ON DELETE CASCADE             |
+| **`habits`**               | Objectifs mensuels récurrents                  | `user_id` → `profiles(id)` ON DELETE CASCADE          |
+| **`habit_logs`**           | Logs de complétion journalière                 | `habit_id` → `habits(id)`, `user_id` → `profiles(id)` |
+| **`todos`**                | Tâches temporaires (auto-supprimées après 24h) | `user_id` → `profiles(id)` ON DELETE CASCADE          |
+| **`friendships`**          | Relations d'amitié entre utilisateurs          | `user_id`, `friend_id` → `profiles(id)`               |
+| **`shared_groups`**        | Groupes collaboratifs                          | `creator_id` → `profiles(id)`                         |
+| **`shared_group_members`** | Membres des groupes avec date de join          | `group_id` → `shared_groups(id)`, `user_id`           |
+| **`shared_habits`**        | Objectifs appartenant à un groupe              | `group_id` → `shared_groups(id)`, `created_by`        |
+| **`shared_habit_logs`**    | Complétions journalières par membre du groupe  | `shared_habit_id` → `shared_habits(id)`, `user_id`    |
 
 ### Modèles TypeScript ↔ Tables SQL
 
@@ -130,7 +142,8 @@ UserProfile  →  profiles     (id, email, first_name, last_name, username, avat
 Habit        →  habits       (id, user_id, name, category, frequency[], color, icon, time, target_month, created_at)
 HabitLog     →  habit_logs   (id, habit_id, user_id, completed_date, created_at)  [UNIQUE: habit_id + completed_date]
 Todo         →  todos        (id, user_id, title, is_completed, created_at)
-```
+Friendship   →  friendships  (id, user_id, friend_id, status, created_at)
+SharedGroup  →  shared_groups, shared_group_members, shared_habits, shared_habit_logs
 
 ### Types dérivés (UI uniquement, pas de table)
 
@@ -160,6 +173,7 @@ Toutes les tables ont RLS activé. Chaque utilisateur ne peut **voir, créer, mo
 | `on_auth_user_confirmed`     | `auth.users` | AFTER UPDATE  | Crée automatiquement le profil dans `profiles` quand `email_confirmed_at` passe de NULL à une valeur (anti-fantômes) |
 | `update_profiles_updated_at` | `profiles`   | BEFORE UPDATE | Met à jour automatiquement `updated_at` à chaque modification                                                        |
 | `trigger_cleanup_old_todos`  | `todos`      | AFTER INSERT  | Supprime les todos de plus de 24h à chaque nouvel ajout                                                              |
+| `trigger_delete_empty_group_on_leave` | `shared_group_members` | AFTER DELETE | Supprime le groupe partagé automatiquement s'il compte moins de 2 membres après un départ.           |
 
 ---
 
@@ -226,6 +240,16 @@ Le cœur de l'application. Affiche une grille hebdomadaire des objectifs du mois
 - **Couleurs prédéfinies** : `["#ffda59", "#1fb05a", "#ff6b6b", "#4facff", "#9d4edd", "#ff9e00"]`
 - **Icônes prédéfinies** : `["🎯", "🏃‍♂️", "📚", "💧", "🧘‍♂️", "💼", "🧠", "🔥", "💪", "🥦"]`
 
+### `SharedHabitsTracker.tsx` (~644 lignes)
+
+Page principale de suivi des objectifs communs (groupes).
+
+- **Interface Mobile-first** : Sur smartphone, les cartes d'objectifs sont entièrement cliquables pour l'édition et les boutons sont masqués (les boutons d'action d'édition et suppression habituels existent sur Desktop).
+- **Navigation Temporelle** : Sélecteur de jour carrousel pour valider l'objectif du groupe pour n'importe quelle date passée ou présente. Le filtre s'ajuste selon la fréquence de l'habitude.
+- **Gestion Avancée des Groupes** : Les users peuvent éditer le nom ou les participants, et "quitter un groupe". Les groupes vides se détruisent automatiquement.
+- **Ajout/Édition Avancé** : Le modal des habitudes inclut maintenant les mêmes paramètres qu'un Habit individuel (fréquence et période de durabilité).
+- **Animation Skeleton** : Pendant le chargement, des blocs grisés "néo-brutalistes" clignotent en fond.
+
 ### `Navigation.tsx` (~201 lignes)
 
 Barre de navigation responsive.
@@ -281,8 +305,17 @@ Liste de tâches temporaires (24h).
 
 ### `friendService.ts`
 
-- `searchByUsername(query)` — Recherche partielle insensible à la casse (limité à 10 résultats)
+- `searchByUsername(query)` — Recherche partielle insensible à la casse
 - `getProfileById(userId)` — Récupère le profil public d'un utilisateur
+- `getFriends()`, `getPendingRequests()` — Liste des amis et demandes en cours
+- `sendFriendRequest(friendId)`, `acceptFriendRequest()`, `rejectFriendRequest()`, `removeFriend()` — Actions d'amitié
+
+### `sharedHabitService.ts`
+
+- `createGroup()`, `updateGroup()`, `deleteSharedGroup()`, `fetchUserGroups()` — Gestion complète du cycle de vie des groupes
+- `inviteUserToGroup()`, `leaveGroup()`, `removeMember()` — Gestion des membres au sein du groupe
+- `addSharedHabit()`, `updateSharedHabit()`, `deleteSharedHabit()`, `fetchHabitsByGroup()` — CRUD des objectifs liés au groupe
+- `toggleLog()` — Validation d'un objectif de groupe par journée pour un utilisateur précis
 
 ---
 
@@ -344,12 +377,11 @@ Les migrations dans `supabase/migrations/` sont ordonnées numériquement et doc
 
 ## 🔮 Fonctionnalités à venir / En cours
 
-- [ ] **Système d'amis complet** : Envoi/acceptation/refus de demandes d'amis (la page et le service sont prêts mais la table de relations n'existe pas encore en BDD)
 - [ ] **Profil public étendu** : Afficher les statistiques d'un autre utilisateur sur sa page profil
-- [ ] **Notifications** : Rappels pour les objectifs non cochés
 - [ ] **Mode sombre** : Variante dark du thème néo-brutaliste
 
 ---
 
-_Dernière mise à jour de ce README : 8 Mars 2026_
+_Dernière mise à jour de ce README : 17 Mars 2026_
+
 # K-Productivity

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
+import { ChevronDown, Repeat } from "lucide-react";
 import { habitService } from "@/lib/services/habitService";
 import { UIHabit, HabitCategory } from "@/lib/models/habit";
 import { getMonthDays } from "./habit-tracker/constants";
@@ -9,6 +10,7 @@ import HabitSkeleton from "./habit-tracker/HabitSkeleton";
 import HabitTableDesktop from "./habit-tracker/HabitTableDesktop";
 import HabitListMobile from "./habit-tracker/HabitListMobile";
 import HabitModal, { type HabitFormData } from "./habit-tracker/HabitModal";
+import { supabase } from "@/lib/supabase/client";
 
 interface HabitTrackerProps {
   profileUserId?: string;
@@ -22,8 +24,22 @@ export default function HabitTracker({
   const [habits, setHabits] = useState<UIHabit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Filtre
   const [categoryFilter, setCategoryFilter] = useState<HabitCategory | "TOUS">("TOUS");
+  const [isCollapsed, setIsCollapsed] = useState(true);
+
+  // Persistence du state isCollapsed
+  useEffect(() => {
+    const saved = localStorage.getItem("habitTrackerCollapsed");
+    if (saved !== null) {
+      setIsCollapsed(saved === "true");
+    }
+  }, []);
+
+  const toggleCollapse = () => {
+    const newState = !isCollapsed;
+    setIsCollapsed(newState);
+    localStorage.setItem("habitTrackerCollapsed", String(newState));
+  };
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -56,6 +72,25 @@ export default function HabitTracker({
       setIsLoading(false);
     }
   };
+
+  // Realtime : synchronise les logs depuis un autre onglet ou appareil
+  useEffect(() => {
+    if (readOnly) return; // Pas de souscription en mode lecture seule
+    const channel = supabase
+      .channel("habit-logs-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "habit_logs" },
+        () => { loadHabits(); }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "habits" },
+        () => { loadHabits(); }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [readOnly]);
 
   // === ACTIONS ===
 
@@ -183,8 +218,37 @@ export default function HabitTracker({
       initial={{ opacity: 0, y: 30 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      className="w-full p-4 md:p-8 flex flex-col items-center max-w-6xl mx-auto font-sans"
+      className="w-full px-4 md:px-8 mt-4 mb-2 flex flex-col items-center max-w-6xl mx-auto font-sans"
     >
+      {/* HEADER RÉDUCTIBLE */}
+      <button
+        onClick={toggleCollapse}
+        className="flex items-center gap-3 mb-4 w-full text-left group cursor-pointer"
+      >
+        <div className="w-9 h-9 flex items-center justify-center bg-primary dark:bg-primary/30 border-[3px] border-foreground dark:border-gray-500 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(100,100,100,0.3)] shrink-0">
+          <Repeat size={18} strokeWidth={3} className="dark:text-gray-300" />
+        </div>
+        <motion.div
+          animate={{ rotate: isCollapsed ? -90 : 0 }}
+          transition={{ type: "spring", stiffness: 400, damping: 25 }}
+          className="shrink-0"
+        >
+          <ChevronDown size={20} strokeWidth={3} className="text-foreground/50 group-hover:text-foreground transition-colors" />
+        </motion.div>
+        <h2 className="text-xl sm:text-2xl font-black uppercase text-foreground">
+          Objectifs répétitifs
+        </h2>
+      </button>
+
+      <AnimatePresence initial={false}>
+        {!isCollapsed && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="w-full overflow-hidden"
+          >
       <div className="w-full">
         <HabitTableDesktop
           habits={filteredHabits}
@@ -212,6 +276,9 @@ export default function HabitTracker({
           setCategoryFilter={setCategoryFilter}
         />
       </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <HabitModal
         isOpen={isModalOpen}

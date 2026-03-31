@@ -3,8 +3,43 @@
 @tailwind utilities;
 
 :root {
+  --primary: #FFFF00;
   --background: #F4F4F4;
+  --surface: #FFFFFF;
   --foreground: #000000;
+  --muted: #555555;
+  --shadow-color: rgba(0,0,0,1);
+}
+
+.dark {
+  --primary: #f43f5e; /* Rose néo-brutaliste (Tailwind rose-500) */
+  --background: #18181b;
+  --surface: #27272a;
+  --foreground: #d4d4d8;
+  --muted: #71717a;
+  --shadow-color: rgba(0,0,0,1);
+}
+
+/* Transforme les surbrillances blanches/grises en une variante lumineuse de l'objet survolé (uniquement dark mode) */
+.dark .hover\:bg-white:hover {
+  background-color: var(--primary) !important;
+  filter: brightness(1.2);
+}
+
+.dark .hover\:bg-gray-50:hover,
+.dark .hover\:bg-gray-100:hover,
+.dark .hover\:bg-gray-200:hover {
+  background-color: var(--surface) !important;
+  filter: brightness(1.2);
+}
+
+/* Force dark colors for readability on specifically colored elements */
+.dark .neo-btn {
+  color: #000000 !important;
+}
+
+.dark [style*="background-color"] {
+  color: #000000 !important;
 }
 
 html, body {
@@ -37,5 +72,12 @@ body {
   }
   .neo-checkbox {
     @apply w-8 h-8 border-4 border-foreground flex items-center justify-center cursor-pointer transition-colors;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
   }
 }

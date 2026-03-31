@@ -3,6 +3,7 @@ import { Montserrat } from "next/font/google";
 import "./globals.css";
 import Navigation from "@/components/Navigation";
 import OneSignalProvider from "@/components/OneSignalProvider";
+import { ThemeProvider } from "@/components/ThemeProvider";
 
 const montserrat = Montserrat({
   variable: "--font-archivo-black",
@@ -43,11 +44,13 @@ export default function RootLayout({
   return (
     <html lang="fr">
       <body
-        className={`${montserrat.variable} font-sans antialiased pb-28 md:pb-0 overflow-x-hidden`}
+        className={`${montserrat.variable} font-sans antialiased pb-28 md:pb-0 md:pt-[88px] overflow-x-hidden`}
       >
-        <Navigation />
-        <OneSignalProvider />
-        {children}
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <Navigation />
+          <OneSignalProvider />
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   );

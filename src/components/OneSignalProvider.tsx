@@ -4,6 +4,25 @@ import { useEffect, useRef } from "react";
 import OneSignal from "react-onesignal";
 import { supabase } from "@/lib/supabase/client";
 
+// Utilitaire appelable depuis n'importe quel composant
+export async function requestNotificationPermission() {
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission === "granted") {
+      await (OneSignal.User as any).PushSubscription.optIn();
+    }
+    return permission;
+  } catch (e) {
+    console.error("[OneSignal] Erreur demande permission:", e);
+    return "denied";
+  }
+}
+
+export function getNotificationPermission(): NotificationPermission | "unsupported" {
+  if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
+  return Notification.permission;
+}
+
 export default function OneSignalProvider() {
   const initialized = useRef(false);
 
@@ -27,7 +46,7 @@ export default function OneSignalProvider() {
           appId,
           safari_web_id: process.env.NEXT_PUBLIC_ONESIGNAL_SAFARI_WEB_ID,
           notifyButton: {
-            enable: true,
+            enable: false, // Remplacé par notre bouton personnalisé dans le header
           },
           serviceWorkerParam: { scope: "/push/onesignal/" },
           serviceWorkerPath: "push/onesignal/OneSignalSDKWorker.js",

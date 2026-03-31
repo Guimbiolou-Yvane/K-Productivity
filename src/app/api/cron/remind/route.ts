@@ -56,12 +56,13 @@ async function sendOneSignalNotification(
 }
 
 /**
- * Ce CRON s'exécute chaque jour à 6h UTC (7h FR).
+ * Ce CRON s'exécute chaque jour à 6h UTC.
  *
- * Il fait 3 choses :
- * 1. Envoie un rappel MATINAL (immédiat, 7h FR)
- * 2. Programme un rappel APRÈS-MIDI (14h FR) et SOIR (21h FR) via send_after
+ * Il fait 4 choses :
+ * 1. Envoie un rappel MATINAL (7h locale utilisateur)
+ * 2. Programme un rappel APRÈS-MIDI (14h) et SOIR (21h) via send_after
  * 3. Programme des rappels à l'heure exacte de chaque habitude + 10 min avant
+ * 4. Programme des rappels pour les objectifs temporaires (todos) ayant une heure
  */
 export async function GET(req: Request) {
   const authHeader = req.headers.get("authorization");
@@ -82,21 +83,22 @@ export async function GET(req: Request) {
   }
 
   try {
-    // Fuseau horaire FR : UTC+1 en hiver (CET), UTC+2 en été (CEST)
-    // Pour simplifier, on utilise Europe/Paris
     const now = new Date();
-    const todayFR = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Paris" }));
-    const todayDayName = DAY_MAP[todayFR.getDay()];
-    const todayDate = `${todayFR.getFullYear()}-${String(todayFR.getMonth() + 1).padStart(2, "0")}-${String(todayFR.getDate()).padStart(2, "0")}`;
 
-    console.log(`[CRON] Rappels du ${todayDate} (${todayDayName})`);
+    // On utilise UTC comme référence neutre pour les filtres de date
+    // (les dates start_date/end_date sont stockées en YYYY-MM-DD sans timezone)
+    const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const todayDateUTC = `${todayUTC.getUTCFullYear()}-${String(todayUTC.getUTCMonth() + 1).padStart(2, "0")}-${String(todayUTC.getUTCDate()).padStart(2, "0")}`;
+    const todayDayNameUTC = DAY_MAP[todayUTC.getUTCDay()];
 
-    // 1. Récupérer les habitudes actives (pas seulement le mois courant)
+    console.log(`[CRON] Rappels du ${todayDateUTC} (${todayDayNameUTC}) — UTC`);
+
+    // 1. Récupérer les habitudes actives
     const { data: habits, error: habitsError } = await supabaseAdmin
       .from("habits")
       .select("id, user_id, name, frequency, icon, time, start_date, end_date")
-      .lte("start_date", todayDate)
-      .gte("end_date", todayDate);
+      .lte("start_date", todayDateUTC)
+      .gte("end_date", todayDateUTC);
 
     if (habitsError) throw habitsError;
     if (!habits || habits.length === 0) {
@@ -105,7 +107,7 @@ export async function GET(req: Request) {
 
     // 2. Filtrer les habitudes programmées aujourd'hui
     const todaysHabits = habits.filter((h) =>
-      h.frequency.includes(todayDayName),
+      h.frequency.includes(todayDayNameUTC),
     );
     if (todaysHabits.length === 0) {
       return NextResponse.json({
@@ -118,11 +120,23 @@ export async function GET(req: Request) {
     const { data: logs } = await supabaseAdmin
       .from("habit_logs")
       .select("habit_id, user_id")
-      .eq("completed_date", todayDate);
+      .eq("completed_date", todayDateUTC);
 
     const completedSet = new Set(
       (logs || []).map((l) => `${l.user_id}:${l.habit_id}`),
     );
+
+    // 4. Récupérer les fuseaux horaires des utilisateurs concernés
+    const userIds = [...new Set(todaysHabits.map(h => h.user_id))];
+    const { data: profiles } = await supabaseAdmin
+      .from("profiles")
+      .select("id, timezone")
+      .in("id", userIds);
+
+    const userTimezones: Record<string, string> = {};
+    for (const p of profiles || []) {
+      userTimezones[p.id] = p.timezone || "Europe/Paris";
+    }
 
     // ============================
     // Construire les données par utilisateur
@@ -154,39 +168,60 @@ export async function GET(req: Request) {
     let generalSent = 0;
     let scheduledSent = 0;
 
-    // Calculer les heures FR pour les rappels programmés
-    // On calcule le décalage UTC pour Paris aujourd'hui
-    const parisOffset = getParisOffsetHours(now);
-
     for (const [userId, pending] of Object.entries(pendingByUser)) {
       const count = pending.names.length;
       const icon = pending.icons[0];
       const habitList = pending.names.slice(0, 3).join(", ");
       const extra = count > 3 ? ` et ${count - 3} autre(s)` : "";
 
+      // Fuseau horaire de l'utilisateur (fallback: Europe/Paris)
+      const userTz = userTimezones[userId] || "Europe/Paris";
+      const userOffset = getTimezoneOffsetHours(now, userTz);
+
+      // Composants de la date locale de l'utilisateur
+      const userLocalDate = new Date(now.toLocaleString("en-US", { timeZone: userTz }));
+      const localYear = userLocalDate.getFullYear();
+      const localMonth = userLocalDate.getMonth();
+      const localDay = userLocalDate.getDate();
+
       // ============================
-      // A) RAPPEL MATINAL (immédiat - 7h FR)
+      // A) RAPPEL MATINAL (programmé — 7h locale utilisateur)
       // ============================
+      const morningTime = new Date(Date.UTC(localYear, localMonth, localDay, 7 - userOffset, 0, 0, 0));
+
       const morningTitle = `☀️ ${count} objectif${count > 1 ? "s" : ""} aujourd'hui !`;
       const morningBody =
         count === 1
           ? `Bonjour ! N'oublie pas : ${pending.names[0]} 💪`
           : `Bonjour ! Au programme : ${habitList}${extra}. C'est parti ! 💪`;
 
-      const okMorning = await sendOneSignalNotification(
-        userId,
-        morningTitle,
-        morningBody,
-        ONESIGNAL_APP_ID,
-        ONESIGNAL_REST_API_KEY,
-      );
-      if (okMorning) generalSent++;
+      if (morningTime > now) {
+        // Programmé pour plus tard
+        const okMorning = await sendOneSignalNotification(
+          userId,
+          morningTitle,
+          morningBody,
+          ONESIGNAL_APP_ID,
+          ONESIGNAL_REST_API_KEY,
+          morningTime.toISOString(),
+        );
+        if (okMorning) scheduledSent++;
+      } else {
+        // 7h locale déjà passée → envoi immédiat
+        const okMorning = await sendOneSignalNotification(
+          userId,
+          morningTitle,
+          morningBody,
+          ONESIGNAL_APP_ID,
+          ONESIGNAL_REST_API_KEY,
+        );
+        if (okMorning) generalSent++;
+      }
 
       // ============================
-      // B) RAPPEL APRÈS-MIDI (programmé - 14h FR)
+      // B) RAPPEL APRÈS-MIDI (programmé — 14h locale utilisateur)
       // ============================
-      const afternoonTime = new Date(now);
-      afternoonTime.setUTCHours(14 - parisOffset, 0, 0, 0);
+      const afternoonTime = new Date(Date.UTC(localYear, localMonth, localDay, 14 - userOffset, 0, 0, 0));
       
       if (afternoonTime > now) {
         const afternoonTitle = `🔔 Mi-journée : ${count} objectif${count > 1 ? "s" : ""} en cours`;
@@ -204,10 +239,9 @@ export async function GET(req: Request) {
       }
 
       // ============================
-      // C) RAPPEL SOIR (programmé - 21h FR)
+      // C) RAPPEL SOIR (programmé — 21h locale utilisateur)
       // ============================
-      const eveningTime = new Date(now);
-      eveningTime.setUTCHours(21 - parisOffset, 0, 0, 0);
+      const eveningTime = new Date(Date.UTC(localYear, localMonth, localDay, 21 - userOffset, 0, 0, 0));
 
       if (eveningTime > now) {
         const eveningTitle = `🌙 Bilan du soir`;
@@ -227,14 +261,17 @@ export async function GET(req: Request) {
       }
 
       // ============================
-      // D) RAPPELS À L'HEURE EXACTE + 10 MIN AVANT
+      // D) RAPPELS À L'HEURE EXACTE + 10 MIN AVANT (dans le fuseau de l'utilisateur)
       // ============================
       for (const th of pending.timedHabits) {
         const [hours, minutes] = th.time.split(":").map(Number);
 
+        // Construire l'heure exacte dans le fuseau de l'utilisateur, convertie en UTC
+        const exactTimeMs = Date.UTC(localYear, localMonth, localDay, hours - userOffset, minutes, 0, 0);
+        const exactTime = new Date(exactTimeMs);
+
         // Rappel 10 min avant
-        const beforeTime = new Date(now);
-        beforeTime.setUTCHours(hours - parisOffset, minutes - 10, 0, 0);
+        const beforeTime = new Date(exactTimeMs - 10 * 60 * 1000);
 
         if (beforeTime > now) {
           const ok = await sendOneSignalNotification(
@@ -247,10 +284,6 @@ export async function GET(req: Request) {
           );
           if (ok) scheduledSent++;
         }
-
-        // Rappel à l'heure exacte
-        const exactTime = new Date(now);
-        exactTime.setUTCHours(hours - parisOffset, minutes, 0, 0);
 
         if (exactTime > now) {
           const ok = await sendOneSignalNotification(
@@ -266,11 +299,87 @@ export async function GET(req: Request) {
       }
     }
 
+    // ============================
+    // E) RAPPELS POUR OBJECTIFS TEMPORAIRES (TODOS) AVEC HEURE
+    // ============================
+    let todoSent = 0;
+
+    // Récupérer les todos actifs (< 24h) avec une heure définie et non complétés
+    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: timedTodos } = await supabaseAdmin
+      .from("todos")
+      .select("id, user_id, title, time, is_completed")
+      .gte("created_at", yesterday)
+      .eq("is_completed", false)
+      .not("time", "is", null);
+
+    if (timedTodos && timedTodos.length > 0) {
+      // Regrouper par utilisateur
+      const todosByUser: Record<string, { title: string; time: string }[]> = {};
+      for (const todo of timedTodos) {
+        if (!todosByUser[todo.user_id]) todosByUser[todo.user_id] = [];
+        todosByUser[todo.user_id].push({ title: todo.title, time: todo.time });
+      }
+
+      // Récupérer les timezones des utilisateurs de todos pas encore connus
+      const todoUserIds = Object.keys(todosByUser).filter(id => !userTimezones[id]);
+      if (todoUserIds.length > 0) {
+        const { data: todoProfiles } = await supabaseAdmin
+          .from("profiles")
+          .select("id, timezone")
+          .in("id", todoUserIds);
+        for (const p of todoProfiles || []) {
+          userTimezones[p.id] = p.timezone || "Europe/Paris";
+        }
+      }
+      for (const [userId, userTodos] of Object.entries(todosByUser)) {
+        const userTz = userTimezones[userId] || "Europe/Paris";
+        const userOffset = getTimezoneOffsetHours(now, userTz);
+        const userLocalDate = new Date(now.toLocaleString("en-US", { timeZone: userTz }));
+        const lYear = userLocalDate.getFullYear();
+        const lMonth = userLocalDate.getMonth();
+        const lDay = userLocalDate.getDate();
+
+        for (const todo of userTodos) {
+          const [hours, minutes] = todo.time.split(":").map(Number);
+
+          const exactTimeMs = Date.UTC(lYear, lMonth, lDay, hours - userOffset, minutes, 0, 0);
+          const exactTime = new Date(exactTimeMs);
+          const beforeTime = new Date(exactTimeMs - 10 * 60 * 1000);
+
+          if (beforeTime > now) {
+            const ok = await sendOneSignalNotification(
+              userId,
+              `📌 ${todo.title} dans 10 min`,
+              `Prépare-toi ! Ta tâche "${todo.title}" approche 🔥`,
+              ONESIGNAL_APP_ID,
+              ONESIGNAL_REST_API_KEY,
+              beforeTime.toISOString(),
+            );
+            if (ok) todoSent++;
+          }
+
+          if (exactTime > now) {
+            const ok = await sendOneSignalNotification(
+              userId,
+              `📌 C'est l'heure : ${todo.title} !`,
+              `C'est maintenant ! Lance-toi sur "${todo.title}" ✅`,
+              ONESIGNAL_APP_ID,
+              ONESIGNAL_REST_API_KEY,
+              exactTime.toISOString(),
+            );
+            if (ok) todoSent++;
+          }
+        }
+      }
+    }
+
     return NextResponse.json({
       message: "Rappels traités",
       generalSent,
       scheduledSent,
-      date: todayDate,
+      todoSent,
+      date: todayDateUTC,
     });
   } catch (error: any) {
     console.error("[CRON] Erreur:", error);
@@ -282,11 +391,19 @@ export async function GET(req: Request) {
 }
 
 /**
- * Retourne le décalage horaire de Paris en heures (1 en hiver CET, 2 en été CEST).
+ * Retourne le décalage horaire d'un fuseau IANA en heures par rapport à UTC.
+ * Ex: "Europe/Paris" → 1 en hiver, 2 en été / "Africa/Douala" → 1 toujours
  */
-function getParisOffsetHours(date: Date): number {
-  // On utilise Intl pour trouver le décalage exact de Europe/Paris
-  const utcDate = new Date(date.toLocaleString("en-US", { timeZone: "UTC" }));
-  const parisDate = new Date(date.toLocaleString("en-US", { timeZone: "Europe/Paris" }));
-  return Math.round((parisDate.getTime() - utcDate.getTime()) / (1000 * 60 * 60));
+function getTimezoneOffsetHours(date: Date, timezone: string): number {
+  try {
+    const utcDate = new Date(date.toLocaleString("en-US", { timeZone: "UTC" }));
+    const tzDate = new Date(date.toLocaleString("en-US", { timeZone: timezone }));
+    return Math.round((tzDate.getTime() - utcDate.getTime()) / (1000 * 60 * 60));
+  } catch {
+    // Fallback Europe/Paris si le fuseau est invalide
+    const utcDate = new Date(date.toLocaleString("en-US", { timeZone: "UTC" }));
+    const parisDate = new Date(date.toLocaleString("en-US", { timeZone: "Europe/Paris" }));
+    return Math.round((parisDate.getTime() - utcDate.getTime()) / (1000 * 60 * 60));
+  }
 }
+

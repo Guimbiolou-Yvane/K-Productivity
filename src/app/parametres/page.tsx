@@ -2,14 +2,17 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
-import { User, Mail, Calendar, LogOut, Save, Shield, Pencil, Check, X } from "lucide-react";
+import { User, Mail, Calendar, LogOut, Save, Shield, Pencil, Check, X, Moon, Sun, Monitor, Settings, RotateCcw, Globe } from "lucide-react";
+import ResetObjectivesModal from "@/components/ResetObjectivesModal";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 import { authService } from "@/lib/services/authService";
 import { UserProfile } from "@/lib/models/user";
 
 export default function ParametresPage() {
   const router = useRouter();
+  const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -32,6 +35,13 @@ export default function ParametresPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
 
+  // Réinitialisation des objectifs
+  const [showResetModal, setShowResetModal] = useState(false);
+
+  // Fuseau horaire
+  const [editTimezone, setEditTimezone] = useState("");
+  const [isEditingTimezone, setIsEditingTimezone] = useState(false);
+
   useEffect(() => {
     setMounted(true);
     const loadProfile = async () => {
@@ -42,6 +52,7 @@ export default function ParametresPage() {
           setEditUsername(data.username);
           setEditFirstName(data.first_name || "");
           setEditLastName(data.last_name || "");
+          setEditTimezone(data.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Paris");
         }
       } catch (error) {
         console.error("Erreur chargement profil:", error);
@@ -169,17 +180,39 @@ export default function ParametresPage() {
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 30 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      className="min-h-screen p-4 md:p-8 flex flex-col items-center max-w-4xl mx-auto font-sans pb-32 overflow-x-hidden"
-    >
-      {/* HEADER */}
-      <div className="w-full flex justify-between items-center mb-8 border-b-8 border-foreground pb-4">
-        <h1 className="text-3xl md:text-5xl font-black uppercase tracking-tighter">Paramètres</h1>
+    <>
+      {/* HEADER sticky hors du motion.div pour éviter le conflit overflow */}
+      <div className="sticky top-0 z-30 bg-surface border-b-4 border-foreground w-full">
+        <div className="max-w-4xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 flex items-center justify-center bg-primary border-[3px] border-foreground shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] shrink-0">
+              <Settings size={18} strokeWidth={3} />
+            </div>
+            <div>
+              <h1 className="text-xl font-black uppercase tracking-tight leading-none">Paramètres</h1>
+              <p className="font-bold text-foreground/50 text-xs mt-0.5 leading-snug hidden sm:block">
+                Gérez votre profil et vos préférences.
+              </p>
+            </div>
+          </div>
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={handleSignOut}
+            className="flex items-center gap-2 px-3 py-2 border-[3px] border-foreground bg-[#ff6b6b] text-white font-black uppercase text-xs shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] transition-all"
+          >
+            <LogOut size={14} strokeWidth={3} />
+            <span className="hidden sm:inline">Déconnexion</span>
+          </motion.button>
+        </div>
       </div>
 
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+        className="min-h-screen flex flex-col items-center max-w-4xl mx-auto font-sans pb-32 w-full"
+      >
+      <div className="w-full px-4 md:px-8 py-6 flex flex-col gap-6">
       {/* SAVE MESSAGE */}
       {saveMessage && (
         <motion.div
@@ -421,7 +454,185 @@ export default function ParametresPage() {
         </div>
       </section>
 
-      {/* SECTION 5 : DÉCONNEXION */}
+      {/* SECTION 4.5 : FUSEAU HORAIRE */}
+      <section className="w-full mb-6">
+        <h3 className="text-lg sm:text-xl font-black uppercase text-foreground pl-2 border-l-8 border-[#1fb05a] mb-4">
+          Fuseau horaire
+        </h3>
+        <div className="neo-card">
+          {isEditingTimezone ? (
+            <div className="flex flex-col gap-3">
+              <p className="text-xs font-bold text-foreground/50">
+                Ce fuseau est utilisé pour les rappels de notifications liés aux horaires de vos objectifs.
+              </p>
+              <select
+                value={editTimezone}
+                onChange={(e) => setEditTimezone(e.target.value)}
+                className="neo-input !p-3 font-bold text-base w-full"
+              >
+                <optgroup label="🇫🇷 France">
+                  <option value="Europe/Paris">Europe/Paris (France métropolitaine)</option>
+                  <option value="America/Guadeloupe">Amérique/Guadeloupe</option>
+                  <option value="America/Martinique">Amérique/Martinique</option>
+                  <option value="America/Cayenne">Amérique/Cayenne (Guyane)</option>
+                  <option value="Indian/Reunion">Océan Indien/Réunion</option>
+                  <option value="Indian/Mayotte">Océan Indien/Mayotte</option>
+                  <option value="Pacific/Noumea">Pacifique/Nouméa (Nouvelle-Calédonie)</option>
+                  <option value="Pacific/Tahiti">Pacifique/Tahiti (Polynésie)</option>
+                </optgroup>
+                <optgroup label="🇧🇪 Belgique">
+                  <option value="Europe/Brussels">Europe/Bruxelles</option>
+                </optgroup>
+                <optgroup label="🇨🇭 Suisse">
+                  <option value="Europe/Zurich">Europe/Zurich</option>
+                </optgroup>
+                <optgroup label="🇨🇦 Canada">
+                  <option value="America/Montreal">Amérique/Montréal</option>
+                  <option value="America/Toronto">Amérique/Toronto</option>
+                </optgroup>
+                <optgroup label="🇮🇨 Afrique">
+                  <option value="Africa/Douala">Afrique/Douala (Cameroun)</option>
+                  <option value="Africa/Abidjan">Afrique/Abidjan (Côte d'Ivoire)</option>
+                  <option value="Africa/Dakar">Afrique/Dakar (Sénégal)</option>
+                  <option value="Africa/Kinshasa">Afrique/Kinshasa (RDC Ouest)</option>
+                  <option value="Africa/Lubumbashi">Afrique/Lubumbashi (RDC Est)</option>
+                  <option value="Africa/Algiers">Afrique/Alger (Algérie)</option>
+                  <option value="Africa/Tunis">Afrique/Tunis (Tunisie)</option>
+                  <option value="Africa/Casablanca">Afrique/Casablanca (Maroc)</option>
+                  <option value="Africa/Libreville">Afrique/Libreville (Gabon)</option>
+                  <option value="Africa/Brazzaville">Afrique/Brazzaville (Congo)</option>
+                  <option value="Indian/Antananarivo">Océan Indien/Antananarivo (Madagascar)</option>
+                </optgroup>
+                <optgroup label="🌍 Autres">
+                  <option value="Europe/London">Europe/Londres</option>
+                  <option value="Europe/Berlin">Europe/Berlin</option>
+                  <option value="America/New_York">Amérique/New York</option>
+                  <option value="America/Los_Angeles">Amérique/Los Angeles</option>
+                  <option value="Asia/Tokyo">Asie/Tokyo</option>
+                  <option value="Asia/Dubai">Asie/Dubaï</option>
+                  <option value="Asia/Shanghai">Asie/Shanghai</option>
+                  <option value="Australia/Sydney">Australie/Sydney</option>
+                </optgroup>
+              </select>
+              <div className="flex gap-2 justify-end">
+                <button
+                  onClick={async () => {
+                    setIsSaving(true);
+                    try {
+                      const updated = await authService.updateProfile({ timezone: editTimezone });
+                      setProfile(updated);
+                      setIsEditingTimezone(false);
+                      setSaveMessage("Fuseau horaire mis à jour !");
+                      setTimeout(() => setSaveMessage(""), 3000);
+                    } catch (error: any) {
+                      setSaveMessage(error?.message || "Erreur lors de la mise à jour");
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  }}
+                  disabled={isSaving}
+                  className="neo-btn bg-green-300 !px-4 !py-2 flex items-center gap-2 disabled:opacity-50"
+                >
+                  <Check size={18} strokeWidth={4} />
+                  Sauvegarder
+                </button>
+                <button
+                  onClick={() => {
+                    setIsEditingTimezone(false);
+                    setEditTimezone(profile?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Paris");
+                  }}
+                  className="neo-btn bg-red-200 !px-4 !py-2 flex items-center gap-2"
+                >
+                  <X size={18} strokeWidth={4} />
+                  Annuler
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Globe size={20} strokeWidth={3} className="text-foreground/60" />
+                <div>
+                  <span className="font-bold text-foreground/80 block">
+                    {editTimezone || "Non défini"}
+                  </span>
+                  <span className="text-xs font-bold text-foreground/50 block mt-0.5">
+                    Utilisé pour les rappels de vos objectifs.
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsEditingTimezone(true)}
+                className="neo-btn !px-3 !py-2 bg-[#1fb05a] flex items-center justify-center"
+              >
+                <Pencil size={16} strokeWidth={3} />
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* SECTION 5 : APPARENCE (THÈME) */}
+      <section className="w-full mb-8">
+        <h3 className="text-lg sm:text-xl font-black uppercase text-foreground pl-2 border-l-8 border-[#9d4edd] mb-4">
+          Apparence
+        </h3>
+        <div className="neo-card flex flex-col md:flex-row gap-4">
+          <button
+            onClick={() => setTheme("light")}
+            className={`flex-1 flex flex-col items-center justify-center p-4 border-4 transition-all cursor-pointer shadow-[2px_2px_0px_0px_var(--shadow-color)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none ${theme === 'light' ? 'border-primary bg-primary/20 scale-[0.98] shadow-none' : 'border-foreground bg-surface hover:bg-gray-100 dark:hover:bg-zinc-800'}`}
+          >
+            <Sun size={24} strokeWidth={3} className="mb-2" />
+            <span className="font-bold uppercase text-sm">Clair</span>
+          </button>
+          
+          <button
+            onClick={() => setTheme("dark")}
+            className={`flex-1 flex flex-col items-center justify-center p-4 border-4 transition-all cursor-pointer shadow-[2px_2px_0px_0px_var(--shadow-color)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none ${theme === 'dark' ? 'border-primary bg-primary/20 scale-[0.98] shadow-none' : 'border-foreground bg-surface hover:bg-gray-100 dark:hover:bg-zinc-800'}`}
+          >
+            <Moon size={24} strokeWidth={3} className="mb-2" />
+            <span className="font-bold uppercase text-sm">Sombre</span>
+          </button>
+
+          <button
+            onClick={() => setTheme("system")}
+            className={`flex-1 flex flex-col items-center justify-center p-4 border-4 transition-all cursor-pointer shadow-[2px_2px_0px_0px_var(--shadow-color)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none ${theme === 'system' ? 'border-primary bg-primary/20 scale-[0.98] shadow-none' : 'border-foreground bg-surface hover:bg-gray-100 dark:hover:bg-zinc-800'}`}
+          >
+            <Monitor size={24} strokeWidth={3} className="mb-2" />
+            <span className="font-bold uppercase text-sm">Système</span>
+          </button>
+        </div>
+      </section>
+
+      {/* SECTION 6 : RÉINITIALISATION DES OBJECTIFS */}
+      <section className="w-full mb-8">
+        <h3 className="text-lg sm:text-xl font-black uppercase text-foreground pl-2 border-l-8 border-red-400 mb-4">
+          Réinitialisation
+        </h3>
+        <div className="neo-card">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <RotateCcw size={20} strokeWidth={3} className="text-foreground/60 shrink-0" />
+              <div className="min-w-0">
+                <span className="font-bold text-foreground/80 block">Réinitialiser mes objectifs</span>
+                <span className="text-xs font-bold text-foreground/50 block mt-0.5">
+                  Supprimez vos objectifs et recommencez à zéro.
+                </span>
+              </div>
+            </div>
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowResetModal(true)}
+              className="neo-btn !px-4 !py-2 !bg-red-400 hover:!bg-red-500 text-sm flex items-center gap-2 shrink-0"
+            >
+              <RotateCcw size={14} strokeWidth={3} />
+              <span className="hidden sm:inline">Réinitialiser</span>
+            </motion.button>
+          </div>
+        </div>
+      </section>
+
+      {/* SECTION 6 : DÉCONNEXION */}
       <section className="w-full mb-8">
         <motion.button
           whileHover={{ scale: 1.01 }}
@@ -433,6 +644,14 @@ export default function ParametresPage() {
           Se déconnecter
         </motion.button>
       </section>
-    </motion.div>
+      </div>
+      </motion.div>
+
+      {/* MODAL RÉINITIALISATION */}
+      <ResetObjectivesModal
+        isOpen={showResetModal}
+        onClose={() => setShowResetModal(false)}
+      />
+    </>
   );
 }

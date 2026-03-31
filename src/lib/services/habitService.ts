@@ -129,6 +129,8 @@ export const habitService = {
 
         if (frequency.includes(todayDay)) {
           const [h, m] = time.split(":").map(Number);
+
+          // Rappels avant l'heure
           const offsets = [
             { min: 60, label: "dans 1 heure" },
             { min: 20, label: "dans 20 minutes" },
@@ -152,6 +154,23 @@ export const habitService = {
                 }),
               }).catch(() => {});
             }
+          }
+
+          // Rappel à l'heure exacte
+          const exactTime = new Date();
+          exactTime.setHours(h, m, 0, 0);
+
+          if (exactTime > now) {
+            fetch("/api/push/send", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                userId: user.id,
+                title: `${emojiIcon} C'est l'heure : ${name} !`,
+                body: `C'est maintenant ! Lance-toi sur "${name}" et valide ton objectif ✅`,
+                sendAfter: exactTime.toISOString(),
+              }),
+            }).catch(() => {});
           }
         }
       }
@@ -839,5 +858,27 @@ export const habitService = {
     const rate = expected > 0 ? Math.round((completed / expected) * 100) : 0;
 
     return { completed, expected, missed, rate: Math.min(rate, 100) };
+  },
+
+  // Réinitialiser tous les objectifs personnels (supprime les logs puis les habitudes)
+  async resetAllHabits(): Promise<void> {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error("Non connecté");
+
+    // 1. Supprimer tous les logs d'habitudes de l'utilisateur
+    const { error: logsError } = await supabase
+      .from("habit_logs")
+      .delete()
+      .eq("user_id", user.id);
+    if (logsError) throw logsError;
+
+    // 2. Supprimer toutes les habitudes de l'utilisateur
+    const { error: habitsError } = await supabase
+      .from("habits")
+      .delete()
+      .eq("user_id", user.id);
+    if (habitsError) throw habitsError;
   },
 };

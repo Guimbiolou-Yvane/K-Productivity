@@ -7,6 +7,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { friendService } from "@/lib/services/friendService";
 import { UserProfile } from "@/lib/models/user";
+import { supabase } from "@/lib/supabase/client";
 
 interface FriendRequest {
   id: string;
@@ -27,6 +28,18 @@ export default function AmisPage() {
   useEffect(() => {
     setMounted(true);
     fetchData();
+
+    // Realtime : mise à jour automatique des demandes d'amis
+    const channel = supabase
+      .channel("friendships-realtime")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "friendships" },
+        () => { fetchData(); }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, []);
 
   const fetchData = async () => {
@@ -104,17 +117,29 @@ export default function AmisPage() {
   }
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 30 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      className="min-h-screen p-4 md:p-8 flex flex-col items-center max-w-4xl mx-auto font-sans pb-32 overflow-x-hidden"
-    >
-      {/* HEADER */}
-      <div className="w-full flex justify-between items-center mb-8 border-b-8 border-foreground pb-4">
-        <h1 className="text-3xl md:text-5xl font-black uppercase tracking-tighter">Amis</h1>
+    <>
+      {/* HEADER sticky hors du motion.div pour éviter le conflit overflow */}
+      <div className="sticky top-0 z-30 bg-surface border-b-4 border-foreground w-full">
+        <div className="max-w-4xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 flex items-center justify-center bg-primary border-[3px] border-foreground shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] shrink-0">
+              <Users size={18} strokeWidth={3} />
+            </div>
+            <h1 className="text-xl font-black uppercase tracking-tight leading-none">Amis</h1>
+            <span className="bg-primary border-[3px] border-foreground text-foreground text-xs font-black px-2 py-0.5 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+              {friends.length}
+            </span>
+          </div>
+        </div>
       </div>
 
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+        className="min-h-screen flex flex-col items-center max-w-4xl mx-auto font-sans pb-32 w-full"
+      >
+      <div className="w-full px-4 md:px-8 py-6 flex flex-col">
       {/* ============================== */}
       {/* BARRE DE RECHERCHE */}
       {/* ============================== */}
@@ -290,6 +315,8 @@ export default function AmisPage() {
           </div>
         )}
       </section>
-    </motion.div>
+      </div>
+      </motion.div>
+    </>
   );
 }
