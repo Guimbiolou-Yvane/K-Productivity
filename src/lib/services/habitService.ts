@@ -296,19 +296,19 @@ export const habitService = {
 
     const evaluatedDays = [];
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
     for (let i = 0; i < 365; i++) {
-       const d = new Date(today);
-       d.setDate(d.getDate() - i);
+       const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() - i);
        const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
        const dayOfWeek = DAYS_MAP[d.getDay()];
 
+       // Utilise la comparaison ISO string pour éviter les problèmes de DST
        const applicableHabits = (habits || []).filter(h => {
           const inFreq = h.frequency ? h.frequency.includes(dayOfWeek) : true;
-          const habitStart = new Date(h.start_date + "T00:00:00").getTime();
-          const habitEnd = new Date(h.end_date + "T00:00:00").getTime();
-          return inFreq && d.getTime() >= habitStart && d.getTime() <= habitEnd;
+          const isAfterStart = !h.start_date || dateStr >= h.start_date;
+          const isBeforeEnd = !h.end_date || dateStr <= h.end_date;
+          return inFreq && isAfterStart && isBeforeEnd;
        });
 
        if (applicableHabits.length === 0) {
@@ -320,8 +320,11 @@ export const habitService = {
            (logs || []).some(l => l.habit_id === h.id && l.completed_date === dateStr)
        ).length;
 
-       const isSuccessful = completedCount === applicableHabits.length && applicableHabits.length > 0;
-       evaluatedDays.push({ dateStr, isSuccessful, isNotApplicable: false, count: completedCount, dateObj: d });
+       const isSuccessful = completedCount === applicableHabits.length;
+       // Aujourd'hui en cours : si pas encore tout fait, ce n'est pas un échec
+       const isToday = dateStr === todayStr;
+       const isTodayIncomplete = isToday && !isSuccessful && completedCount > 0;
+       evaluatedDays.push({ dateStr, isSuccessful, isNotApplicable: false, isTodayIncomplete, count: completedCount, dateObj: d });
     }
 
     let streakCount = 0;
@@ -329,29 +332,28 @@ export const habitService = {
     
     for (let i = 0; i < evaluatedDays.length; i++) {
         const day = evaluatedDays[i];
-        if (i === 0) { // today
-            if (day.isSuccessful) {
-                streakCount++;
-                streakDates.push(day);
-            }
-            // If today is unsuccessful or not applicable, we simply continue to yesterday without breaking
+
+        if (day.isNotApplicable) {
+            // Les jours non applicables ne brisent pas ni n'incrémentent le streak
+            // Sauf si c'est le premier jour et qu'il est non applicable = on commence à hier
             continue;
         }
 
-        if (day.isNotApplicable) {
-            continue; // Skip N/A days, they don't break or increment the streak
+        if (i === 0 && !day.isSuccessful) {
+            // Aujourd'hui pas encore terminé → on commence le comptage depuis hier
+            continue;
         }
 
         if (day.isSuccessful) {
             streakCount++;
             streakDates.push(day);
         } else {
-            // Unsuccessful day breaks the streak.
+            // Jour non complété → le streak s'arrête
             break; 
         }
     }
     
-    streakDates.reverse(); // oldest to newest
+    streakDates.reverse(); // du plus ancien au plus récent
     return { currentStreak: streakCount, streakDates };
   },
 
@@ -363,17 +365,42 @@ export const habitService = {
     if (!user && !userId) return { current: 0, best: 0 };
     const targetUserId = userId || user?.id;
 
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("longest_streak")
-      .eq("id", targetUserId)
-      .maybeSingle();
+    const { currentStreak, streakDates } = await this._evaluateStreak(targetUserId as string);
 
-    const { currentStreak } = await this._evaluateStreak(targetUserId as string);
+    // Calculer le meilleur streak sur TOUT l'historique des logs
+    const { data: allLogs } = await supabase
+      .from("habit_logs")
+      .select("completed_date")
+      .eq("user_id", targetUserId)
+      .order("completed_date", { ascending: true });
+
+    let bestStreak = currentStreak;
+
+    if (allLogs && allLogs.length > 0) {
+      // Obtenir les dates uniques triées
+      const uniqueDates = [...new Set(allLogs.map((l: any) => l.completed_date))].sort();
+      let tempStreak = 1;
+
+      for (let i = 1; i < uniqueDates.length; i++) {
+        const [y1, m1, d1] = uniqueDates[i - 1].split("-").map(Number);
+        const [y2, m2, d2] = uniqueDates[i].split("-").map(Number);
+        const prev = new Date(Date.UTC(y1, m1 - 1, d1, 12, 0, 0));
+        const curr = new Date(Date.UTC(y2, m2 - 1, d2, 12, 0, 0));
+        const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
+
+        if (diffDays === 1) {
+          tempStreak++;
+        } else if (diffDays > 1) {
+          bestStreak = Math.max(bestStreak, tempStreak);
+          tempStreak = 1;
+        }
+      }
+      bestStreak = Math.max(bestStreak, tempStreak);
+    }
 
     return {
       current: currentStreak,
-      best: Math.max(profile?.longest_streak || 0, currentStreak),
+      best: bestStreak,
     };
   },
 
@@ -440,12 +467,14 @@ export const habitService = {
 
     const targetMonth = `${year}-${String(month + 1).padStart(2, "0")}`;
 
-    // Récupérer toutes les habitudes de l'utilisateur pour le mois en cours
+    // Récupérer toutes les habitudes actives sur ce mois (pas seulement celles créées ce mois-ci)
+    // Une habitude est "active" sur le mois si son start_date <= fin du mois ET end_date >= début du mois
     const { data: habits } = await supabase
       .from("habits")
       .select("id, name, frequency, start_date, end_date")
       .eq("user_id", targetUserId)
-      .eq("target_month", targetMonth);
+      .lte("start_date", endDate)
+      .gte("end_date", startDate);
 
     if (!habits || habits.length === 0)
       return { allCompletions: [], habits: [] };
@@ -471,15 +500,16 @@ export const habitService = {
       
       const failed: number[] = [];
       const notApplicable: number[] = [];
-      const habitStart = new Date(habit.start_date + "T00:00:00").getTime();
-      const habitEnd = new Date(habit.end_date + "T00:00:00").getTime();
 
       for (let day = 1; day <= daysInMonth; day++) {
         const currentDayDate = new Date(year, month, day);
         const dayOfWeekStr = DAYS[currentDayDate.getDay()];
+        const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
         
         const inFrequency = habit.frequency ? habit.frequency.includes(dayOfWeekStr) : true;
-        const isApplicableDate = currentDayDate.getTime() >= habitStart && currentDayDate.getTime() <= habitEnd;
+        const isAfterStart = !habit.start_date || dateStr >= habit.start_date;
+        const isBeforeEnd = !habit.end_date || dateStr <= habit.end_date;
+        const isApplicableDate = isAfterStart && isBeforeEnd;
 
         if (!(inFrequency && isApplicableDate)) {
           notApplicable.push(day);
@@ -506,12 +536,14 @@ export const habitService = {
       const currentDayDate = new Date(year, month, day);
       const dayOfWeekStr = DAYS[currentDayDate.getDay()];
 
+      const dateStr = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+
       // Filtrer les habitudes qui s'appliquent à ce jour précis
       const applicableHabits = habits.filter((habit) => {
-        const inFrequency = habit.frequency ? habit.frequency.includes(dayOfWeekStr) : true;
-        const habitStart = new Date(habit.start_date + "T00:00:00").getTime();
-        const habitEnd = new Date(habit.end_date + "T00:00:00").getTime();
-        return inFrequency && currentDayDate.getTime() >= habitStart && currentDayDate.getTime() <= habitEnd;
+        const inFreq = habit.frequency ? habit.frequency.includes(dayOfWeekStr) : true;
+        const isAfterStart = !habit.start_date || dateStr >= habit.start_date;
+        const isBeforeEnd = !habit.end_date || dateStr <= habit.end_date;
+        return inFreq && isAfterStart && isBeforeEnd;
       });
 
       if (applicableHabits.length === 0) {
@@ -609,13 +641,9 @@ export const habitService = {
 
         const applicable = habits.filter((h) => {
           const inFreq = h.frequency ? h.frequency.includes(dayOfWeek) : true;
-          const habitStart = new Date(h.start_date + "T00:00:00");
-          const habitEnd = new Date(h.end_date + "T00:00:00");
-          return (
-            inFreq &&
-            d.getTime() >= habitStart.getTime() &&
-            d.getTime() <= habitEnd.getTime()
-          );
+          const isAfterStart = !h.start_date || dateStr >= h.start_date;
+          const isBeforeEnd = !h.end_date || dateStr <= h.end_date;
+          return inFreq && isAfterStart && isBeforeEnd;
         });
 
         const total = applicable.length;
@@ -654,13 +682,9 @@ export const habitService = {
 
           const applicable = habits.filter((h) => {
             const inFreq = h.frequency ? h.frequency.includes(dayOfWeek) : true;
-            const habitStart = new Date(h.start_date + "T00:00:00");
-            const habitEnd = new Date(h.end_date + "T00:00:00");
-            return (
-              inFreq &&
-              d.getTime() >= habitStart.getTime() &&
-              d.getTime() <= habitEnd.getTime()
-            );
+            const isAfterStart = !h.start_date || dateStr >= h.start_date;
+            const isBeforeEnd = !h.end_date || dateStr <= h.end_date;
+            return inFreq && isAfterStart && isBeforeEnd;
           });
 
           totalSum += applicable.length;
@@ -717,16 +741,12 @@ export const habitService = {
         const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
         const dayOfWeek = DAYS_MAP[d.getDay()];
 
-        const applicable = habits.filter((h) => {
-          const inFreq = h.frequency ? h.frequency.includes(dayOfWeek) : true;
-          const habitStart = new Date(h.start_date + "T00:00:00");
-          const habitEnd = new Date(h.end_date + "T00:00:00");
-          return (
-            inFreq &&
-            d.getTime() >= habitStart.getTime() &&
-            d.getTime() <= habitEnd.getTime()
-          );
-        });
+          const applicable = habits.filter((h) => {
+            const inFreq = h.frequency ? h.frequency.includes(dayOfWeek) : true;
+            const isAfterStart = !h.start_date || dateStr >= h.start_date;
+            const isBeforeEnd = !h.end_date || dateStr <= h.end_date;
+            return inFreq && isAfterStart && isBeforeEnd;
+          });
 
         totalSum += applicable.length;
         completedSum += applicable.filter((h) =>
@@ -787,22 +807,14 @@ export const habitService = {
       rangeStart = "2020-01-01";
     }
 
-    // === Récupérer les habitudes ===
+    // Récupérer les habitudes actives sur la plage (overlap entre start_date..end_date et rangeStart..today)
+    // On ne filtre plus par target_month car une habitude créée le mois dernier peut encore être valide aujourd'hui
     let habitsQuery = supabase
       .from("habits")
-      .select("id, frequency, start_date, end_date, target_month")
-      .eq("user_id", targetUserId);
-
-    if (filter === "month") {
-      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-      habitsQuery = habitsQuery.eq("target_month", currentMonth);
-    } else if (filter === "week") {
-      // Pour la semaine, on prend les habitudes du mois courant
-      // (une semaine ne dépasse pas significativement le mois)
-      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-      habitsQuery = habitsQuery.eq("target_month", currentMonth);
-    }
-    // filter === "all" → pas de filtre sur target_month
+      .select("id, frequency, start_date, end_date")
+      .eq("user_id", targetUserId)
+      .lte("start_date", todayStr)
+      .gte("end_date", rangeStart);
 
     const { data: habits } = await habitsQuery;
     if (!habits || habits.length === 0)
@@ -820,35 +832,26 @@ export const habitService = {
 
     // === Calculer le nombre d'objectifs attendus ===
     let expected = 0;
-    const rangeStartDate = new Date(rangeStart + "T00:00:00");
 
     for (const habit of habits) {
       const freq: string[] = habit.frequency || [];
       if (freq.length === 0) continue;
 
-      // Début effectif = le plus tard entre (début de la plage globale, date de début de l'habitude)
-      const habitStart = new Date(habit.start_date + "T00:00:00");
-      const startDate =
-        habitStart > rangeStartDate ? habitStart : new Date(rangeStartDate);
+      // Début et fin par simple vérification de chaînes
+      const startDateStr = habit.start_date && habit.start_date > rangeStart ? habit.start_date : rangeStart;
+      const endDateStr = habit.end_date && habit.end_date < todayStr ? habit.end_date : todayStr;
 
-      // Fin effective = le plus tôt entre (aujourd'hui, date de fin de l'habitude)
-      let endDateLimit = new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-      );
-      const habitEnd = new Date(habit.end_date + "T00:00:00");
-      let endDate = habitEnd < endDateLimit ? habitEnd : new Date(endDateLimit);
+      if (startDateStr > endDateStr) continue;
 
-      if (startDate > endDate) continue;
+      const [sy, sm, sd] = startDateStr.split("-").map(Number);
+      const [ey, em, ed] = endDateStr.split("-").map(Number);
+      
+      const startDateObj = new Date(sy, sm - 1, sd);
+      const endDateObj = new Date(ey, em - 1, ed);
 
-      for (
-        let d = new Date(startDate);
-        d <= endDate;
-        d.setDate(d.getDate() + 1)
-      ) {
-        const dayName = DAYS_MAP[d.getDay()];
-        if (freq.includes(dayName)) {
+      for (let d = new Date(startDateObj); d <= endDateObj; d.setDate(d.getDate() + 1)) {
+        const dayOfWeekStr = DAYS_MAP[d.getDay()];
+        if (freq.includes(dayOfWeekStr)) {
           expected++;
         }
       }

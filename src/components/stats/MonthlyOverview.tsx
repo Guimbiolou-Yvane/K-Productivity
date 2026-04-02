@@ -96,19 +96,27 @@ export default function MonthlyOverview({ habitStats, targetMonth, onMonthChange
             />
           </div>
           
-          <div className="flex flex-wrap gap-2">
-            {filteredHabits.map(habit => (
-              <button 
-                key={habit.id}
-                onClick={() => setSelectedHabitId(habit.id)}
-                className={`px-3 py-1 font-black text-[10px] sm:text-xs border-2 border-foreground uppercase transition-all ${selectedHabitId === habit.id ? 'bg-[#4facff] shadow-none translate-x-[2px] translate-y-[2px] text-foreground' : 'bg-surface shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-foreground/70 hover:bg-[#4facff]/20 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none'}`}
-              >
-                {habit.name}
-              </button>
-            ))}
-            {filteredHabits.length === 0 && (
-              <span className="text-sm font-bold text-muted italic">Aucun objectif trouvé.</span>
-            )}
+          <div className="flex items-center gap-2 w-full mb-3">
+            <span className="text-[10px] font-black uppercase text-foreground/60 whitespace-nowrap shrink-0 pl-1">Filtrer par :</span>
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+              {filteredHabits.map((habit) => (
+                <motion.button
+                  key={habit.id}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => setSelectedHabitId(habit.id)}
+                  className={`px-2.5 py-1 font-black text-[10px] border-[3px] border-foreground uppercase whitespace-nowrap transition-all shrink-0 ${
+                    selectedHabitId === habit.id
+                      ? "bg-foreground text-background shadow-none"
+                      : "bg-surface shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-foreground/70 active:shadow-none active:translate-x-[2px] active:translate-y-[2px]"
+                  }`}
+                >
+                  {habit.name}
+                </motion.button>
+              ))}
+              {filteredHabits.length === 0 && (
+                <span className="text-[10px] font-bold text-muted italic ml-2">Aucun objectif trouvé.</span>
+              )}
+            </div>
           </div>
         </div>
 

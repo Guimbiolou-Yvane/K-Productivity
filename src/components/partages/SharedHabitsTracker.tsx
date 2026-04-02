@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Users, Plus, Trash2, ChevronDown, ChevronUp, Check, Settings, LogOut, Edit, ChevronLeft, ChevronRight, Handshake } from "lucide-react";
+import { Users, Plus, Trash2, ChevronDown, ChevronUp, Check, Settings, LogOut, Edit, ChevronLeft, ChevronRight, Handshake, Calendar } from "lucide-react";
 import { sharedHabitService } from "@/lib/services/sharedHabitService";
 import { authService } from "@/lib/services/authService";
 import { UserProfile } from "@/lib/models/user";
@@ -10,7 +10,8 @@ import { SharedGroup, UISharedHabit } from "@/lib/models/sharedHabit";
 import SharedGroupModal from "./SharedGroupModal";
 import SharedHabitModal, { SharedHabitFormData } from "./SharedHabitModal";
 import SectionInfo from "../SectionInfo";
-import { PRESET_COLORS, getMonthDays, isOutsideDates } from "@/components/habit-tracker/constants";
+import SectionSkeleton from "@/components/SectionSkeleton";
+import { PRESET_COLORS, getDayInfo, addDaysFormat, isOutsideDates } from "@/components/habit-tracker/constants";
 import Image from "next/image";
 import { supabase } from "@/lib/supabase/client";
 
@@ -27,6 +28,21 @@ export default function SharedHabitsTracker() {
   }, [habitsByGroup]);
   const [expandedGroups, setExpandedGroups] = useState<{ [groupId: string]: boolean }>({});
   const [isLoading, setIsLoading] = useState(true);
+
+  const [isCollapsed, setIsCollapsed] = useState(true);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("sharedHabitsCollapsed");
+    if (saved !== null) {
+      setIsCollapsed(saved === "true");
+    }
+  }, []);
+
+  const toggleCollapse = () => {
+    const newState = !isCollapsed;
+    setIsCollapsed(newState);
+    localStorage.setItem("sharedHabitsCollapsed", String(newState));
+  };
   
   const [isGroupModalOpen, setGroupModalOpen] = useState(false);
   const [isHabitModalOpen, setHabitModalOpen] = useState(false);
@@ -35,32 +51,21 @@ export default function SharedHabitsTracker() {
   const [groupToEdit, setGroupToEdit] = useState<{group: SharedGroup, members: UserProfile[]} | null>(null);
 
   const todayStr = new Date().toISOString().split("T")[0];
-
-  const monthDays = useMemo(() => getMonthDays(), []);
-  const todayIdx = useMemo(() => {
-    const idx = monthDays.findIndex((d) => d.isToday);
-    return idx >= 0 ? idx : 0;
-  }, [monthDays]);
-
-  const [currentDayIdx, setCurrentDayIdx] = useState(todayIdx);
+  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
   const [direction, setDirection] = useState(0);
 
-  const safeIdx = Math.max(0, Math.min(currentDayIdx, monthDays.length - 1));
-  const currentDay = monthDays[safeIdx];
-  const currentDateStr = currentDay?.date || todayStr;
+  const currentDay = getDayInfo(selectedDate);
+  const prevDay = getDayInfo(addDaysFormat(selectedDate, -1));
+  const nextDay = getDayInfo(addDaysFormat(selectedDate, 1));
+  const currentDateStr = selectedDate;
 
-  const prevIdx = safeIdx > 0 ? safeIdx - 1 : null;
-  const nextIdx = safeIdx < monthDays.length - 1 ? safeIdx + 1 : null;
-
-  const getDayLabel = (idx: number) => {
-    const day = monthDays[idx];
+  const getDayLabel = (day: any) => {
     if (!day) return "";
     if (day.isToday) return "AUJOURD'HUI";
     return `${day.dayName.toUpperCase()} ${day.dayNumber}`;
   };
 
-  const getDateLabel = (idx: number) => {
-    const day = monthDays[idx];
+  const getDateLabel = (day: any) => {
     if (!day) return "";
     const d = new Date(day.date + "T00:00:00");
     return d
@@ -70,23 +75,26 @@ export default function SharedHabitsTracker() {
   };
 
   const handlePrevDay = () => {
-    if (currentDayIdx > 0) {
-      setDirection(-1);
-      setCurrentDayIdx((prev) => prev - 1);
-    }
+    setDirection(-1);
+    setSelectedDate(addDaysFormat(selectedDate, -1));
   };
 
   const handleNextDay = () => {
-    if (currentDayIdx < monthDays.length - 1) {
-      setDirection(1);
-      setCurrentDayIdx((prev) => prev + 1);
-    }
+    setDirection(1);
+    setSelectedDate(addDaysFormat(selectedDate, 1));
   };
 
   const goToToday = () => {
-    if (currentDayIdx === todayIdx) return;
-    setDirection(todayIdx > currentDayIdx ? 1 : -1);
-    setCurrentDayIdx(todayIdx);
+    if (selectedDate === todayStr) return;
+    setDirection(todayStr > selectedDate ? 1 : -1);
+    setSelectedDate(todayStr);
+  };
+
+  const selectSpecificDate = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newDate = e.target.value;
+    if (!newDate) return;
+    setDirection(newDate > selectedDate ? 1 : -1);
+    setSelectedDate(newDate);
   };
 
   useEffect(() => { loadData(); }, []);
@@ -150,14 +158,18 @@ export default function SharedHabitsTracker() {
       setCurrentUser(profile);
       if (profile) {
         const userGroups = await sharedHabitService.fetchUserGroups();
-        setGroups(userGroups);
+        
         const expansions: {[key: string]: boolean} = {};
-        userGroups.forEach(g => { expansions[g.group.id] = true; });
-        setExpandedGroups(expansions);
+        userGroups.forEach(g => { expansions[g.group.id] = false; });
+        
         const habitsObj: { [groupId: string]: UISharedHabit[] } = {};
         for (const g of userGroups) {
           habitsObj[g.group.id] = await sharedHabitService.fetchHabitsByGroup(g.group.id);
         }
+
+        // MAJ des états groupée après tous les await pour éviter le décalage (popping)
+        setGroups(userGroups);
+        setExpandedGroups(expansions);
         setHabitsByGroup(habitsObj);
       }
     } catch (e) { console.error("Erreur loadData", e); }
@@ -243,88 +255,82 @@ export default function SharedHabitsTracker() {
 
   if (!currentUser) return null;
 
+  if (isLoading && groups.length === 0) return <SectionSkeleton />;
+
   return (
-    <>
-      {/* HEADER sticky hors du motion.div pour éviter tout conflit z-index */}
-      <div className="sticky top-0 z-30 bg-surface border-b-4 border-foreground w-full">
-        <div className="max-w-6xl mx-auto px-4 md:px-8 py-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 flex items-center justify-center bg-primary border-[3px] border-foreground shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] shrink-0">
-              <Handshake size={18} strokeWidth={3} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-black uppercase tracking-tight leading-none">
-                  Objectifs Communs
-                </h1>
-                <SectionInfo
-                  title="Objectifs partagés"
-                  description="Crée des groupes, invite tes amis, et fixez-vous des objectifs en commun. Chaque membre doit valider pour que l'objectif soit totalement accompli !"
-                  example="Courir 5km chaque jour en groupe"
-                />
-              </div>
-              <p className="font-bold text-foreground/50 text-xs mt-0.5 hidden sm:block">
-                Défie tes amis et progressez ensemble au quotidien !
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ type: "spring", stiffness: 300, damping: 30 }}
-        className="min-h-screen flex flex-col items-center max-w-6xl mx-auto font-sans pb-32 w-full"
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
+      className="w-full max-w-6xl mx-auto px-4 md:px-8 mt-4 mb-0"
+    >
+      <button
+        onClick={toggleCollapse}
+        className="flex items-center gap-3 mb-4 w-full text-left group cursor-pointer"
       >
-      <div className="w-full px-4 md:px-8 py-6">
-
-      {/* BOUTON CRÉER UN GROUPE */}
-      <div className="w-full flex justify-end mb-6">
-        <motion.button
-          whileTap={{ scale: 0.95 }}
-          onClick={() => setGroupModalOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 border-[3px] border-foreground bg-primary font-black uppercase text-sm shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] transition-all"
+        <div className="w-9 h-9 flex items-center justify-center bg-cyan-400 dark:bg-cyan-400/30 border-[3px] border-foreground dark:border-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(100,100,100,0.3)] shrink-0">
+          <Handshake size={18} strokeWidth={3} className="dark:text-white" />
+        </div>
+        <motion.div
+           animate={{ rotate: isCollapsed ? -90 : 0 }}
+           transition={{ type: "spring", stiffness: 400, damping: 25 }}
+           className="shrink-0"
         >
-          <Plus size={16} strokeWidth={3} />
-          Créer un groupe
-        </motion.button>
-      </div>
-      
-      {isLoading && groups.length === 0 && (
-        <div className="w-full flex justify-center items-center py-10">
+          <ChevronDown size={20} strokeWidth={3} className="text-foreground/50 group-hover:text-foreground transition-colors" />
+        </motion.div>
+        <h2 className="text-xl sm:text-2xl font-black uppercase text-foreground">
+          Objectifs Communs
+        </h2>
+        <SectionInfo
+          title="Objectifs partagés"
+          description="Crée des groupes, invite tes amis, et fixez-vous des objectifs en commun. Chaque membre doit valider pour que l'objectif soit accompli !"
+          example="Courir 5km chaque jour en groupe"
+        />
+        <div className="bg-cyan-100 border-2 border-black px-2 py-0.5 rounded flex items-center gap-1.5 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ml-auto">
+          <Users size={12} strokeWidth={3} className="text-black" />
+          <span className="text-[10px] font-black uppercase text-black hidden sm:inline">
+            {groups.length} Groupe{groups.length > 1 ? "s" : ""}
+          </span>
+          <span className="text-[10px] font-black uppercase text-black sm:hidden">
+            {groups.length}
+          </span>
+        </div>
+      </button>
+
+      <AnimatePresence initial={false}>
+        {!isCollapsed && (
           <motion.div
-            initial={{ opacity: 0.5 }}
-            animate={{ opacity: 1 }}
-            transition={{ repeat: Infinity, duration: 1, repeatType: "reverse" }}
-            className="flex flex-col gap-6 w-full max-w-4xl"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="overflow-hidden"
           >
-            {[1, 2].map((i) => (
-              <div key={i} className="w-full h-24 bg-surface border-4 border-foreground/20 rounded shadow-[4px_4px_0px_0px_rgba(0,0,0,0.1)] flex items-center justify-between p-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-48 h-6 bg-foreground/10 rounded"></div>
-                  <div className="flex -space-x-2">
-                    <div className="w-8 h-8 rounded-full bg-foreground/10 border-2 border-surface"></div>
-                    <div className="w-8 h-8 rounded-full bg-foreground/10 border-2 border-surface"></div>
-                    <div className="w-8 h-8 rounded-full bg-foreground/10 border-2 border-surface"></div>
-                  </div>
-                </div>
-                <div className="w-10 h-10 bg-foreground/10 rounded"></div>
-              </div>
-            ))}
-          </motion.div>
+            <div className="bg-surface border-4 border-foreground shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] p-4 md:p-6 pb-2 w-full">
+
+      {/* SÉLECTEUR DE JOUR ET CALENDRIER */}
+      {currentDay && (
+        <div className="flex flex-col items-center justify-center w-full mb-4">
+          <div className="relative flex items-center gap-2 cursor-pointer bg-surface border-2 border-foreground shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] px-3 py-1.5 active:translate-x-[1px] active:translate-y-[1px] active:shadow-none transition-all hover:bg-primary">
+            <Calendar size={16} strokeWidth={3} className="text-foreground" />
+            <span className="text-[10px] font-black uppercase tracking-wider">Sélectionner une date</span>
+            <input 
+              type="date"
+              value={selectedDate}
+              onChange={selectSpecificDate}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+              aria-label="Sélectionner une date"
+            />
+          </div>
         </div>
       )}
 
-
-
-      {/* SÉLECTEUR DE JOUR */}
+      {/* CARTES DE NAVIGATION DE DATE */}
       {currentDay && (
-        <div className="flex items-center justify-between w-full mb-8 relative gap-2">
+        <div className="flex items-center justify-between w-full mb-6 relative gap-2">
           <button
             onClick={handlePrevDay}
-            disabled={prevIdx === null}
-            className="neo-btn !p-2 z-20 bg-surface flex-shrink-0 disabled:opacity-30"
+            className="neo-btn !p-2 z-20 bg-surface flex-shrink-0"
             aria-label="Jour Précédent"
           >
             <ChevronLeft strokeWidth={4} className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -333,7 +339,7 @@ export default function SharedHabitsTracker() {
           <div className="flex-1 flex justify-center items-center relative h-24 sm:h-28 overflow-hidden mx-1">
             <AnimatePresence initial={false} mode="popLayout" custom={direction}>
               <motion.div
-                key={safeIdx}
+                key={selectedDate}
                 custom={direction}
                 initial={{ x: direction > 0 ? 100 : -100, opacity: 0 }}
                 animate={{ x: 0, opacity: 1 }}
@@ -346,35 +352,32 @@ export default function SharedHabitsTracker() {
                 className="flex justify-center items-end gap-2 w-full absolute inset-0 pb-2"
               >
                 {/* Carte Jour Précédent (SM) */}
-                {prevIdx !== null && (
-                  <motion.div
-                    whileTap={{ scale: 0.9 }}
-                    onClick={handlePrevDay}
-                    className="hidden sm:flex flex-col items-center flex-shrink-0 w-28 cursor-pointer group/card"
-                  >
-                    <span className="text-xs font-black mb-2 opacity-70 tracking-widest group-hover/card:opacity-100 transition-opacity">
-                      {getDateLabel(prevIdx)}
-                    </span>
-                    <div className="neo-card opacity-60 w-full text-center py-2 px-1 text-xs font-bold items-center justify-center truncate bg-surface group-hover/card:opacity-100 group-hover/card:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all">
-                      {getDayLabel(prevIdx)}
-                    </div>
-                  </motion.div>
-                )}
+                <motion.div
+                  whileTap={{ scale: 0.9 }}
+                  onClick={handlePrevDay}
+                  className="hidden sm:flex flex-col items-center flex-shrink-0 w-28 cursor-pointer group/card"
+                >
+                  <span className="text-xs font-black mb-2 opacity-70 tracking-widest group-hover/card:opacity-100 transition-opacity">
+                    {getDateLabel(prevDay)}
+                  </span>
+                  <div className="neo-card opacity-60 w-full text-center py-2 px-1 text-xs font-bold items-center justify-center truncate bg-surface group-hover/card:opacity-100 group-hover/card:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all">
+                    {getDayLabel(prevDay)}
+                  </div>
+                </motion.div>
+                
                 {/* Carte Jour Précédent (XS) */}
-                {prevIdx !== null && (
-                  <motion.div
-                    whileTap={{ scale: 0.9 }}
-                    onClick={handlePrevDay}
-                    className="sm:hidden flex flex-col items-center flex-shrink-0 w-16 cursor-pointer group/card"
-                  >
-                    <span className="text-[10px] font-black mb-2 opacity-70 tracking-wider group-hover/card:opacity-100 transition-opacity">
-                      {getDateLabel(prevIdx)}
-                    </span>
-                    <div className="neo-card opacity-60 w-full text-center py-2 px-1 text-[10px] font-bold items-center justify-center truncate bg-surface group-hover/card:opacity-100 group-hover/card:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all">
-                      {getDayLabel(prevIdx).substring(0, 5)}
-                    </div>
-                  </motion.div>
-                )}
+                <motion.div
+                  whileTap={{ scale: 0.9 }}
+                  onClick={handlePrevDay}
+                  className="sm:hidden flex flex-col items-center flex-shrink-0 w-16 cursor-pointer group/card"
+                >
+                  <span className="text-[10px] font-black mb-2 opacity-70 tracking-wider group-hover/card:opacity-100 transition-opacity">
+                    {getDateLabel(prevDay)}
+                  </span>
+                  <div className="neo-card opacity-60 w-full text-center py-2 px-1 text-[10px] font-bold items-center justify-center truncate bg-surface group-hover/card:opacity-100 group-hover/card:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all">
+                    {getDayLabel(prevDay).substring(0, 5)}
+                  </div>
+                </motion.div>
 
                 {/* Carte Jour Courant (Central) */}
                 <motion.div
@@ -383,59 +386,68 @@ export default function SharedHabitsTracker() {
                   className="flex flex-col items-center flex-shrink-0 w-36 sm:w-48 z-10 cursor-pointer"
                 >
                   <span className="text-sm font-black mb-2 tracking-widest">
-                    {getDateLabel(safeIdx)}
+                    {getDateLabel(currentDay)}
                   </span>
                   <div
                     className={`neo-card text-center py-3 px-1 text-sm sm:text-base font-black border-4 border-foreground shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] w-full flex items-center justify-center active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all ${currentDay.isToday ? "bg-primary" : "bg-surface"}`}
                   >
-                    {getDayLabel(safeIdx)}
+                    {getDayLabel(currentDay)}
                   </div>
                 </motion.div>
 
                 {/* Carte Jour Suivant (SM) */}
-                {nextIdx !== null && (
-                  <motion.div
-                    whileTap={{ scale: 0.9 }}
-                    onClick={handleNextDay}
-                    className="hidden sm:flex flex-col items-center flex-shrink-0 w-28 cursor-pointer group/card"
-                  >
-                    <span className="text-xs font-black mb-2 opacity-70 tracking-widest group-hover/card:opacity-100 transition-opacity">
-                      {getDateLabel(nextIdx)}
-                    </span>
-                    <div className="neo-card opacity-60 w-full text-center py-2 px-1 text-xs font-bold items-center justify-center truncate bg-surface group-hover/card:opacity-100 group-hover/card:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all">
-                      {getDayLabel(nextIdx)}
-                    </div>
-                  </motion.div>
-                )}
+                <motion.div
+                  whileTap={{ scale: 0.9 }}
+                  onClick={handleNextDay}
+                  className="hidden sm:flex flex-col items-center flex-shrink-0 w-28 cursor-pointer group/card"
+                >
+                  <span className="text-xs font-black mb-2 opacity-70 tracking-widest group-hover/card:opacity-100 transition-opacity">
+                    {getDateLabel(nextDay)}
+                  </span>
+                  <div className="neo-card opacity-60 w-full text-center py-2 px-1 text-xs font-bold items-center justify-center truncate bg-surface group-hover/card:opacity-100 group-hover/card:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all">
+                    {getDayLabel(nextDay)}
+                  </div>
+                </motion.div>
+                
                 {/* Carte Jour Suivant (XS) */}
-                {nextIdx !== null && (
-                  <motion.div
-                    whileTap={{ scale: 0.9 }}
-                    onClick={handleNextDay}
-                    className="sm:hidden flex flex-col items-center flex-shrink-0 w-16 cursor-pointer group/card"
-                  >
-                    <span className="text-[10px] font-black mb-2 opacity-70 tracking-wider group-hover/card:opacity-100 transition-opacity">
-                      {getDateLabel(nextIdx)}
-                    </span>
-                    <div className="neo-card opacity-60 w-full text-center py-2 px-1 text-[10px] font-bold items-center justify-center truncate bg-surface group-hover/card:opacity-100 group-hover/card:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all">
-                      {getDayLabel(nextIdx).substring(0, 5)}
-                    </div>
-                  </motion.div>
-                )}
+                <motion.div
+                  whileTap={{ scale: 0.9 }}
+                  onClick={handleNextDay}
+                  className="sm:hidden flex flex-col items-center flex-shrink-0 w-16 cursor-pointer group/card"
+                >
+                  <span className="text-[10px] font-black mb-2 opacity-70 tracking-wider group-hover/card:opacity-100 transition-opacity">
+                    {getDateLabel(nextDay)}
+                  </span>
+                  <div className="neo-card opacity-60 w-full text-center py-2 px-1 text-[10px] font-bold items-center justify-center truncate bg-surface group-hover/card:opacity-100 group-hover/card:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] transition-all">
+                    {getDayLabel(nextDay).substring(0, 5)}
+                  </div>
+                </motion.div>
               </motion.div>
             </AnimatePresence>
           </div>
 
           <button
             onClick={handleNextDay}
-            disabled={nextIdx === null}
-            className="neo-btn !p-2 z-20 bg-surface flex-shrink-0 disabled:opacity-30"
+            className="neo-btn !p-2 z-20 bg-surface flex-shrink-0"
             aria-label="Jour Suivant"
           >
             <ChevronRight strokeWidth={4} className="w-5 h-5 sm:w-6 sm:h-6" />
           </button>
         </div>
       )}
+
+      {/* BOUTON CRÉER UN GROUPE (Pleine largeur) */}
+      <div className="w-full flex mb-8">
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setGroupModalOpen(true)}
+          className="w-full bg-primary border-[3px] sm:border-4 border-foreground shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[4px] active:translate-y-[4px] transition-all py-3 flex items-center justify-center gap-2 text-sm sm:text-base font-black uppercase"
+        >
+          <Plus size={20} strokeWidth={4} />
+          Créer un groupe
+        </motion.button>
+      </div>
 
       {/* GROUPES */}
       {!isLoading && (
@@ -500,13 +512,26 @@ export default function SharedHabitsTracker() {
                       initial={{ opacity: 0, height: 0 }}
                       animate={{ opacity: 1, height: "auto" }}
                       exit={{ opacity: 0, height: 0 }}
-                      className="w-full overflow-hidden border-x-4 border-b-4 border-foreground"
+                      className="w-full overflow-hidden border-x-4 border-b-4 border-foreground flex flex-col"
                     >
+                      {/* NOUVEAU BOUTON AJOUTER (Pleine largeur, en haut) */}
+                      <div className="w-full bg-surface border-b-4 border-foreground">
+                        <motion.button
+                          whileHover={{ scale: 1.02 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => { setActiveGroupId(g.group.id); setHabitModalOpen(true); }}
+                          className="w-full bg-primary py-3 flex items-center justify-center gap-2 text-sm sm:text-base font-black uppercase hover:bg-primary/90 transition-colors"
+                        >
+                          <Plus size={20} strokeWidth={4} />
+                          Ajouter un objectif
+                        </motion.button>
+                      </div>
+
                       {/* LISTE DES OBJECTIFS */}
                       <AnimatePresence mode="popLayout" custom={direction}>
                         {filteredHabits.map((habit, index) => {
                           const validatorIds = habit.members.filter(m => habit.completedLogs[`${currentDateStr}_${m.id}`]).map(m => m.id);
-                          const hasCurrentUserValidated = validatorIds.includes(currentUser.id);
+                          const hasCurrentUserValidated = validatorIds.includes(currentUser!.id);
                           const completionRatio = validatorIds.length / habit.members.length;
                           const isFullyCompleted = completionRatio === 1;
                           const validatedUsernames = habit.members.filter(m => validatorIds.includes(m.id)).map(m => m.username);
@@ -519,16 +544,19 @@ export default function SharedHabitsTracker() {
                               animate={{ opacity: 1, x: 0, scale: 1 }}
                               exit={{ opacity: 0, scale: 0.8, x: direction > 0 ? -50 : 50 }}
                               transition={{ type: "spring", stiffness: 400, damping: 30, delay: index * 0.05 }}
-                              key={`${habit.id}-${safeIdx}`}
+                              key={`${habit.id}-${selectedDate}`}
                               className={`flex flex-col border-b-4 border-foreground last:border-b-0 group/row relative overflow-hidden`}
                             >
                               {/* Barre de progression en fond */}
-                              {!isFullyCompleted && completionRatio > 0 && (
-                                <div 
-                                  className="absolute top-0 left-0 bottom-0 z-0 transition-all duration-700 ease-out opacity-15"
-                                  style={{ width: `${completionRatio * 100}%`, backgroundColor: habit.color || PRESET_COLORS[0] }}
-                                />
-                              )}
+                              {(() => {
+                                const logsCountForDay = habit.completedLogs[`${currentDateStr}_${currentUser!.id}`] ? 1 : 0;
+                                return !isFullyCompleted && completionRatio > 0 && (
+                                  <div 
+                                    className="absolute top-0 left-0 bottom-0 z-0 transition-all duration-700 ease-out opacity-15"
+                                    style={{ width: `${completionRatio * 100}%`, backgroundColor: habit.color || PRESET_COLORS[0] }}
+                                  />
+                                );
+                              })()}
 
                               {/* LIGNE 1 : Nom + Checkbox + Corbeille (se colore à la complétion) */}
                               <div 
@@ -670,18 +698,6 @@ export default function SharedHabitsTracker() {
                         </div>
                       )}
 
-                      {/* BOUTON AJOUTER */}
-                      <div className="p-3 bg-surface flex justify-end border-t-4 border-foreground">
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => { setActiveGroupId(g.group.id); setHabitModalOpen(true); }}
-                          className="bg-primary border-2 border-foreground shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:shadow-none active:translate-x-[2px] active:translate-y-[2px] transition-all px-3 py-1 flex items-center justify-center gap-1 text-xs font-black uppercase"
-                        >
-                          <Plus size={16} strokeWidth={4} />
-                          AJOUTER
-                        </motion.button>
-                      </div>
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -697,7 +713,7 @@ export default function SharedHabitsTracker() {
         onClose={() => { setGroupModalOpen(false); setGroupToEdit(null); }} 
         groupToEdit={groupToEdit} 
         onSave={handleSaveGroup} 
-        onLeaveGroup={groupToEdit ? () => handleLeaveGroup(groupToEdit.group.id) : undefined}
+        onLeaveGroup={groupToEdit ? () => handleLeaveGroup(groupToEdit!.group.id) : undefined}
       />
       <SharedHabitModal 
         isOpen={isHabitModalOpen} 
@@ -711,8 +727,10 @@ export default function SharedHabitsTracker() {
           setHabitToEdit(null);
         }}
       />
-      </div>
-      </motion.div>
-    </>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }

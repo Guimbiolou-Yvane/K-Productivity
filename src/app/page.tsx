@@ -2,6 +2,7 @@ import HabitTracker from "@/components/HabitTracker";
 import GoalList from "@/components/GoalList";
 import TodoList from "@/components/TodoList";
 import SectionDivider from "@/components/SectionDivider";
+import SharedHabitsTracker from "@/components/partages/SharedHabitsTracker";
 import { Target } from "lucide-react";
 
 export default function Home() {
@@ -16,17 +17,20 @@ export default function Home() {
             <div>
               <h1 className="text-xl font-black uppercase tracking-tight leading-none">Objectifs</h1>
               <p className="font-bold text-foreground/50 text-xs mt-0.5 leading-snug hidden sm:block">
-                Habitudes répétitives, projets long terme et tâches temporaires.
+                Habitudes, projets long terme, objectifs temporaires et partagés.
               </p>
             </div>
           </div>
         </div>
       </div>
       <GoalList />
-      <SectionDivider />
+      <SectionDivider color="bg-purple-400 dark:bg-purple-400/30" />
       <HabitTracker />
-      <SectionDivider />
+      <SectionDivider color="bg-primary dark:bg-primary/30" />
       <TodoList />
+      <SectionDivider color="bg-orange-400 dark:bg-orange-400/30" />
+      <SharedHabitsTracker />
+      <SectionDivider color="bg-cyan-400 dark:bg-cyan-400/30" />
     </main>
   );
 }

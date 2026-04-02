@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import SectionInfo from "./SectionInfo";
+import SectionSkeleton from "@/components/SectionSkeleton";
 import { supabase } from "@/lib/supabase/client";
 
 interface GoalListProps {
@@ -171,14 +172,21 @@ export default function GoalList({
   const activeGoals = filteredGoals.filter((g) => !g.is_completed);
   const completedGoals = filteredGoals.filter((g) => g.is_completed);
 
+  if (isLoading && goals.length === 0) return <SectionSkeleton />;
+
   return (
-    <div className="w-full max-w-6xl mx-auto px-4 md:px-8 mt-4 mb-2">
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: "easeOut" }}
+      className="w-full max-w-6xl mx-auto px-4 md:px-8 mt-4 mb-0"
+    >
       <button
         onClick={toggleCollapse}
         className="flex items-center gap-3 mb-4 w-full text-left group cursor-pointer"
       >
-        <div className="w-9 h-9 flex items-center justify-center bg-purple-400 dark:bg-purple-400/30 border-[3px] border-foreground dark:border-gray-500 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(100,100,100,0.3)] shrink-0">
-          <Trophy size={18} strokeWidth={3} className="dark:text-gray-300" />
+        <div className="w-9 h-9 flex items-center justify-center bg-purple-400 dark:bg-purple-400/30 border-[3px] border-foreground dark:border-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(100,100,100,0.3)] shrink-0">
+          <Trophy size={18} strokeWidth={3} className="dark:text-white" />
         </div>
         <motion.div
           animate={{ rotate: isCollapsed ? -90 : 0 }}
@@ -195,9 +203,9 @@ export default function GoalList({
           description="Vos grands projets de vie à réaliser dans une période déterminée. Contrairement aux habitudes répétitives, ces objectifs ont une date cible précise."
           example="Acheter une voiture, Réussir mon bac, Économiser 5000€"
         />
-        <div className="bg-purple-100 border-2 border-foreground px-2 py-0.5 rounded flex items-center gap-1.5 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ml-auto">
-          <Trophy size={12} strokeWidth={3} className="text-foreground" />
-          <span className="text-[10px] font-black uppercase text-foreground">
+        <div className="bg-purple-100 border-2 border-black px-2 py-0.5 rounded flex items-center gap-1.5 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ml-auto">
+          <Trophy size={12} strokeWidth={3} className="text-black" />
+          <span className="text-[10px] font-black uppercase text-black">
             {activeGoals.length} en cours
           </span>
         </div>
@@ -332,7 +340,7 @@ export default function GoalList({
           onDelete={goalToEdit ? (id) => { setGoals((c) => c.filter((g) => g.id !== id)); setIsModalOpen(false); setGoalToEdit(null); } : undefined}
         />
       )}
-    </div>
+    </motion.div>
   );
 }
 

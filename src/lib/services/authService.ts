@@ -142,6 +142,34 @@ export const authService = {
     return data as UserProfile;
   },
 
+  /**
+   * Uploader une photo de profil dans Supabase Storage et mettre à jour le profil.
+   */
+  async uploadAvatar(file: File): Promise<string> {
+    const user = await this.getUser();
+    if (!user) throw new Error("Aucun utilisateur connecté");
+
+    const ext = file.name.split(".").pop();
+    const fileName = `${user.id}.${ext}`;
+    const filePath = `avatars/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("avatars")
+      .upload(filePath, file, { upsert: true, contentType: file.type });
+
+    if (uploadError) throw uploadError;
+
+    const { data: urlData } = supabase.storage
+      .from("avatars")
+      .getPublicUrl(filePath);
+
+    const publicUrl = urlData.publicUrl + `?t=${Date.now()}`;
+
+    await this.updateProfile({ avatar_url: publicUrl });
+
+    return publicUrl;
+  },
+
   // ==========================================
   // MOT DE PASSE
   // ==========================================

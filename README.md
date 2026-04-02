@@ -8,7 +8,17 @@
 
 **Karisma Productivity** est une application web progressive (PWA) qui permet aux utilisateurs de créer des objectifs mensuels récurrents (habits), de les cocher quotidiennement, de suivre leurs statistiques (streaks, taux de réussite, calendrier mensuel), et de gérer des tâches temporaires (todos) à durée de vie de 24h.
 
-L'application inclut un système d'authentification complet (email/password + OAuth Google/Facebook), un système de profils utilisateurs, système de liste d'amis complet avec invitations, la possibilité de créer des **groupes avec des objectifs partagés**, l'envoi de **notifications Push (rappels automatiques via OneSignal)**, et une page de paramètres avancée.
+L'application inclut :
+- ✅ **Objectifs répétitifs** (HabitTracker) avec navigation jour par jour
+- 🏆 **Objectifs long terme** (GoalList) avec suivi de progression
+- 📋 **Tâches temporaires** (TodoList) avec rappels horaires
+- 🤝 **Objectifs en commun** (SharedHabitsTracker) — groupes collaboratifs
+- 👥 **Système de liste d'amis** avec invitations
+- 📊 **Page Statistiques** complète (streak, taux de réussite, calendrier mensuel)
+- 🔔 **Notifications Push** automatiques (OneSignal) : matin, après-midi, soir, et à l'heure exacte de chaque objectif
+- 👤 **Profil utilisateur** avec photo, bio, widgets personnalisables
+- ⚙️ **Paramètres** : username, prénom/nom, photo de profil (upload), bio, mot de passe, thème, fuseau horaire, réinitialisation
+- 🌗 **Mode sombre** (dark mode) complet
 
 ---
 
@@ -23,7 +33,7 @@ L'application inclut un système d'authentification complet (email/password + OA
 | **Animations**    | Motion (ex framer-motion)      | 12.35.0                                           |
 | **Graphiques**    | Recharts                       | 3.8.0                                             |
 | **Icônes**        | Lucide React                   | 0.577.0                                           |
-| **Backend / BDD** | Supabase (Auth + PostgreSQL)   | @supabase/supabase-js 2.98.0, @supabase/ssr 0.9.0 |
+| **Backend / BDD** | Supabase (Auth + PostgreSQL + Storage) | @supabase/supabase-js 2.98.0, @supabase/ssr 0.9.0 |
 | **PWA**           | @ducanh2912/next-pwa           | 10.2.9                                            |
 | **Notifications** | OneSignal (react-onesignal)    | 3.5.1                                             |
 | **Utilitaires**   | date-fns, clsx, tailwind-merge | —                                                 |
@@ -36,7 +46,8 @@ L'application inclut un système d'authentification complet (email/password + OA
 Karisma Productivity/
 ├── public/
 │   ├── K_SVG.png              # Favicon PNG
-│   ├── Logo.png               # Logo PNG (PWA icons)
+│   ├── Logo.png               # Logo PNG
+│   ├── icon-192.png           # Icône PWA notifications push
 │   ├── manifest.json          # Manifeste PWA
 │   ├── sw.js                  # Service Worker (auto-généré)
 │   └── ...                    # Autres assets statiques
@@ -44,7 +55,7 @@ Karisma Productivity/
 ├── src/
 │   ├── app/                   # App Router (Next.js)
 │   │   ├── layout.tsx         # Layout racine (Montserrat font, Navigation)
-│   │   ├── page.tsx           # Page d'accueil (HabitTracker + TodoList)
+│   │   ├── page.tsx           # Page d'accueil (GoalList + HabitTracker + TodoList + SharedHabitsTracker)
 │   │   ├── globals.css        # Styles globaux + utilities néo-brutalistes
 │   │   │
 │   │   ├── api/
@@ -64,57 +75,102 @@ Karisma Productivity/
 │   │   ├── profil/
 │   │   │   ├── page.tsx       # Redirection auto vers /profil/[mon-id]
 │   │   │   └── [id]/
-│   │   │       └── page.tsx   # Page profil (propre ou d'un autre utilisateur)
+│   │   │       └── page.tsx   # Page profil (propre ou d'un autre utilisateur, avec visionneuse photo + bio couverture)
 │   │   │
 │   │   ├── amis/
-│   │   │   └── page.tsx       # Page Amis (recherche utilisateurs, liste d'amis, demandes)
+│   │   │   └── page.tsx       # Page Amis (recherche, liste, demandes)
+│   │   │
+│   │   ├── notifications/
+│   │   │   └── page.tsx       # Page notifications complète
 │   │   │
 │   │   └── parametres/
-│   │       └── page.tsx       # Page Paramètres (modifier profil, mot de passe, déconnexion)
+│   │       └── page.tsx       # Paramètres (profil, photo, bio, mot de passe, thème, fuseau horaire, réinitialisation)
 │   │
 │   ├── components/
-│   │   ├── HabitTracker.tsx   # Composant principal : grille d'objectifs hebdomadaire (716 lignes)
-│   │   ├── Navigation.tsx     # Barre de navigation bottom (mobile) + sidebar (desktop)
-│   │   └── TodoList.tsx       # Liste de tâches temporaires (24h)
+│   │   ├── GoalList.tsx           # Objectifs long terme (collapsible, persistance localStorage)
+│   │   ├── HabitTracker.tsx       # Objectifs répétitifs (grille + vue mobile)
+│   │   ├── TodoList.tsx           # Tâches temporaires 24h (collapsible)
+│   │   ├── SectionDivider.tsx     # Séparateur animé (cibles colorées défilantes)
+│   │   ├── SectionSkeleton.tsx    # Squelette de chargement unifié pour les sections
+│   │   ├── Navigation.tsx         # Barre de nav bottom (mobile) + header (desktop)
+│   │   ├── NotificationSidebar.tsx# Sidebar notifications temps réel
+│   │   ├── ResetObjectivesModal.tsx
+│   │   ├── SectionInfo.tsx        # Tooltip d'aide contextuelle
+│   │   │
+│   │   ├── habit-tracker/
+│   │   │   ├── HabitTableDesktop.tsx  # Vue tableau desktop
+│   │   │   ├── HabitListMobile.tsx    # Vue liste mobile
+│   │   │   ├── HabitModal.tsx         # Modal ajout/édition
+│   │   │   └── constants.ts           # Couleurs prédéfinies, getMonthDays, etc.
+│   │   │
+│   │   ├── partages/
+│   │   │   ├── SharedHabitsTracker.tsx  # Objectifs en commun (collapsible, intégré à la page d'accueil)
+│   │   │   ├── SharedGroupModal.tsx
+│   │   │   └── SharedHabitModal.tsx
+│   │   │
+│   │   ├── profile/
+│   │   │   └── ProfileWidgets.tsx   # Widgets affichés sur la page profil
+│   │   │
+│   │   └── stats/
+│   │       ├── StreakSection.tsx        # Section séries
+│   │       ├── SuccessRateSection.tsx   # Graphique Recharts (axes adaptatifs dark mode)
+│   │       ├── MonthlyOverview.tsx      # Calendrier mensuel (filtres scrollables)
+│   │       └── StatsSkeleton.tsx
+│   │
+│   ├── hooks/
+│   │   └── useTimezoneSync.ts  # Hook de synchronisation fuseau horaire
 │   │
 │   ├── lib/
 │   │   ├── models/
-│   │   │   ├── user.ts        # Interface UserProfile
-│   │   │   ├── habit.ts       # Interfaces Habit, HabitLog, UIHabit, StreakStats, MonthlyStatsData, SuccessRatePoint
+│   │   │   ├── user.ts        # Interface UserProfile (+ bio, timezone)
+│   │   │   ├── habit.ts       # Interfaces Habit, HabitLog, UIHabit, StreakStats, ...
+│   │   │   ├── goal.ts        # Interface Goal (objectifs long terme)
+│   │   │   ├── sharedHabit.ts # Interfaces SharedGroup, UISharedHabit, ...
 │   │   │   └── todo.ts        # Interface Todo
 │   │   │
 │   │   ├── services/
-│   │   │   ├── authService.ts        # Authentification (signUp, signIn, OAuth, profil, mot de passe, listeners)
+│   │   │   ├── authService.ts        # Auth + profil + uploadAvatar()
 │   │   │   ├── habitService.ts       # CRUD Habits + Statistiques complètes
-│   │   │   ├── todoService.ts        # CRUD Todos (fetch, add, toggle, delete)
-│   │   │   ├── friendService.ts      # Recherche, demandes d'amis, consultation amis
-│   │   │   └── sharedHabitService.ts # Groupes, invitations, habitudes partagées et progression inter-membres
+│   │   │   ├── goalService.ts        # CRUD Objectifs long terme
+│   │   │   ├── todoService.ts        # CRUD Todos
+│   │   │   ├── friendService.ts      # Amis, demandes, profils publics
+│   │   │   ├── sharedHabitService.ts # Groupes partagés et objectifs communs
+│   │   │   └── notificationService.ts# Notifications in-app (CRUD + Realtime)
 │   │   │
 │   │   └── supabase/
-│   │       ├── client.ts      # Client Supabase côté navigateur (createBrowserClient)
-│   │       └── server.ts      # Client Supabase côté serveur (createServerClient avec cookies)
+│   │       ├── client.ts      # Client Supabase côté navigateur
+│   │       └── server.ts      # Client Supabase côté serveur
 │   │
-│   └── middleware.ts          # Middleware Next.js : rafraîchit la session Supabase + protège les routes privées
+│   └── middleware.ts          # Rafraîchit la session Supabase + protège les routes privées
 │
 ├── supabase/
-│   ├── schema.sql             # Schéma SQL de base (profiles, habits, habit_logs) + RLS + Triggers
-│   ├── fresh_setup.sql        # Script complet "from scratch" consolidant tout (⚡ RECOMMANDÉ pour un fresh install)
-│   ├── seed.sql               # Script de peuplement (3 habitudes + logs + todos de test)
+│   ├── schema.sql             # Schéma SQL de base
+│   ├── fresh_setup.sql        # Script complet "from scratch" (⚡ RECOMMANDÉ pour un fresh install)
+│   ├── seed.sql               # Script de peuplement (données de test)
 │   └── migrations/
-│       ├── 001_update_handle_new_user.sql    # Trigger anti-fantômes (profil créé à la confirmation email)
-│       ├── 003_temporary_todos.sql           # Création table todos + trigger auto-cleanup 24h
-│       ├── ...                               # Différentes modifications RLS & colonnes
-│       ├── 010_friendships.sql               # Ajout du système d'amitié (demandes, acceptations, pending)
-│       └── 012_shared_habits.sql             # Groupes partagés et objectifs multi-utilisateurs
+│       ├── 001_update_handle_new_user.sql    # Trigger anti-fantômes
+│       ├── 003_temporary_todos.sql           # Table todos + trigger auto-cleanup 24h
+│       ├── 010_friendships.sql               # Système d'amitié
+│       ├── 012_shared_habits.sql             # Groupes partagés et objectifs communs
+│       ├── 013_auto_delete_empty_groups.sql  # Suppression auto des groupes vides
+│       ├── 014_notifications.sql             # Table notifications + triggers amis/groupes
+│       ├── 015_notify_shared_habit_log.sql   # Notif à la validation d'un objectif commun
+│       ├── 016_enable_realtime.sql           # Activation Supabase Realtime
+│       ├── 017_add_time_to_todos.sql         # Heure optionnelle sur les todos
+│       ├── 018_long_term_goals.sql           # Table goals (objectifs long terme)
+│       ├── add_timezone_to_profiles.sql      # Colonne timezone dans profiles
+│       ├── 020_avatars_bucket.sql            # Bucket Supabase Storage pour les photos de profil
+│       ├── 021_profile_bio.sql               # Colonne bio dans profiles
+│       └── 022_fix_notification_links.sql    # Correction liens /partages → / dans les triggers
 │
-├── DesignUI.md                # Charte graphique Néo-Brutalisme (couleurs, typo, formes, ombres)
-├── Motion.md                  # Guide des bonnes pratiques d'animation avec Motion v12
-├── Recharts.md                # Guide d'utilisation de Recharts
+├── DesignUI.md                # Charte graphique Néo-Brutalisme
+├── Motion.md                  # Guide animations Motion v12
+├── Recharts.md                # Guide Recharts
 │
-├── tailwind.config.ts         # Config Tailwind (couleurs, ombres néo, polices)
-├── next.config.ts             # Config Next.js (PWA, remote images Google/Facebook)
+├── tailwind.config.ts         # Config Tailwind
+├── next.config.ts             # Config Next.js (PWA + images Supabase/Google/Facebook)
 ├── package.json               # Dépendances et scripts
-└── .env.local                 # Variables d'environnement (Supabase URL + Anon Key)
+└── .env.local                 # Variables d'environnement
 ```
 
 ---
@@ -125,66 +181,80 @@ Karisma Productivity/
 
 | Table                      | Description                                    | Clés étrangères                                       |
 | -------------------------- | ---------------------------------------------- | ----------------------------------------------------- |
-| **`profiles`**             | Profil utilisateur (lié à `auth.users`)        | `id` → `auth.users(id)` ON DELETE CASCADE             |
-| **`habits`**               | Objectifs mensuels récurrents                  | `user_id` → `profiles(id)` ON DELETE CASCADE          |
+| **`profiles`**             | Profil utilisateur (+ `bio`, `timezone`, `avatar_url`) | `id` → `auth.users(id)` ON DELETE CASCADE    |
+| **`habits`**               | Objectifs répétitifs mensuels                  | `user_id` → `profiles(id)` ON DELETE CASCADE          |
 | **`habit_logs`**           | Logs de complétion journalière                 | `habit_id` → `habits(id)`, `user_id` → `profiles(id)` |
-| **`todos`**                | Tâches temporaires (auto-supprimées après 24h) | `user_id` → `profiles(id)` ON DELETE CASCADE          |
+| **`todos`**                | Tâches temporaires (auto-supprimées après 24h, `time` optionnel) | `user_id` → `profiles(id)` ON DELETE CASCADE |
+| **`goals`**                | Objectifs long terme (avec date cible, couleur, catégorie) | `user_id` → `profiles(id)` ON DELETE CASCADE |
 | **`friendships`**          | Relations d'amitié entre utilisateurs          | `user_id`, `friend_id` → `profiles(id)`               |
 | **`shared_groups`**        | Groupes collaboratifs                          | `creator_id` → `profiles(id)`                         |
 | **`shared_group_members`** | Membres des groupes avec date de join          | `group_id` → `shared_groups(id)`, `user_id`           |
 | **`shared_habits`**        | Objectifs appartenant à un groupe              | `group_id` → `shared_groups(id)`, `created_by`        |
 | **`shared_habit_logs`**    | Complétions journalières par membre du groupe  | `shared_habit_id` → `shared_habits(id)`, `user_id`    |
+| **`notifications`**        | Notifications in-app (amis, groupes, validations) | `user_id` → `profiles(id)` ON DELETE CASCADE       |
 
 ### Modèles TypeScript ↔ Tables SQL
 
 ```
-UserProfile  →  profiles     (id, email, first_name, last_name, username, avatar_url, longest_streak, created_at, updated_at)
-Habit        →  habits       (id, user_id, name, category, frequency[], color, icon, time, target_month, created_at)
-HabitLog     →  habit_logs   (id, habit_id, user_id, completed_date, created_at)  [UNIQUE: habit_id + completed_date]
-Todo         →  todos        (id, user_id, title, is_completed, created_at)
-Friendship   →  friendships  (id, user_id, friend_id, status, created_at)
+UserProfile  →  profiles      (id, email, first_name, last_name, username, avatar_url, bio, timezone, longest_streak, created_at, updated_at)
+Habit        →  habits        (id, user_id, name, category, frequency[], color, icon, time, start_date, end_date, created_at)
+HabitLog     →  habit_logs    (id, habit_id, user_id, completed_date, created_at)
+Todo         →  todos         (id, user_id, title, time?, is_completed, created_at)
+Goal         →  goals         (id, user_id, name, color, category, duration, target_date, is_completed, created_at)
+Friendship   →  friendships   (id, user_id, friend_id, status, created_at)
 SharedGroup  →  shared_groups, shared_group_members, shared_habits, shared_habit_logs
-
-### Types dérivés (UI uniquement, pas de table)
-
-| Type                | Rôle                                                                          |
-| ------------------- | ----------------------------------------------------------------------------- |
-| `UIHabit`           | Habit + dictionnaire `completedLogs` pour l'affichage hebdomadaire            |
-| `StreakStats`       | `{ current, best }` — calculé depuis `habit_logs` + `profiles.longest_streak` |
-| `DailyActivityLog`  | Données pour les cercles de la série actuelle (date, count, color)            |
-| `HabitMonthlyStats` | Jours du mois où un objectif a été validé                                     |
-| `MonthlyStatsData`  | Agrégation des stats mensuelles (tous objectifs + par objectif)               |
-| `SuccessRatePoint`  | Point de données pour le graphique Recharts (label, rate, completed, total)   |
-
-### Enum PostgreSQL
-
-```sql
-CREATE TYPE habit_category AS ENUM ('SANTÉ', 'DÉV. PERSO', 'TRAVAIL', 'SOCIAL', 'GÉNÉRAL');
+Notification →  notifications (id, user_id, type, title, body, link, is_read, created_at)
 ```
+
+### Stockage (Supabase Storage)
+
+| Bucket      | Accès  | Limite | Types autorisés       |
+| ----------- | ------ | ------ | --------------------- |
+| **avatars** | Public | 3 Mo   | image/jpeg, png, gif, webp |
+
+### Triggers & Fonctions SQL
+
+| Trigger                               | Table                   | Événement     | Rôle                                                                      |
+| ------------------------------------- | ----------------------- | ------------- | ------------------------------------------------------------------------- |
+| `on_auth_user_confirmed`              | `auth.users`            | AFTER UPDATE  | Crée automatiquement le profil dans `profiles` à la confirmation email    |
+| `update_profiles_updated_at`          | `profiles`              | BEFORE UPDATE | Met à jour `updated_at` à chaque modification                             |
+| `trigger_cleanup_old_todos`           | `todos`                 | AFTER INSERT  | Supprime les todos de plus de 24h à chaque nouvel ajout                   |
+| `trigger_delete_empty_group_on_leave` | `shared_group_members`  | AFTER DELETE  | Supprime le groupe s'il reste moins de 2 membres                          |
+| `notify_on_friend_request`            | `friendships`           | AFTER INSERT  | Crée une notif in-app + lien `/amis` à la réception d'une demande d'ami   |
+| `notify_on_friend_accept`             | `friendships`           | AFTER UPDATE  | Crée une notif in-app quand une demande est acceptée                      |
+| `notify_on_group_invite`              | `shared_group_members`  | AFTER INSERT  | Crée une notif in-app + lien `/` à l'invitation dans un groupe            |
+| `notify_on_shared_habit_log`          | `shared_habit_logs`     | AFTER INSERT  | Notifie les membres du groupe quand quelqu'un valide un objectif commun   |
 
 ### Row Level Security (RLS)
 
-Toutes les tables ont RLS activé. Chaque utilisateur ne peut **voir, créer, modifier et supprimer que ses propres données** (`auth.uid() = user_id` ou `auth.uid() = id` pour profiles).
-
-### Triggers & Fonctions
-
-| Trigger                      | Table        | Événement     | Rôle                                                                                                                 |
-| ---------------------------- | ------------ | ------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `on_auth_user_confirmed`     | `auth.users` | AFTER UPDATE  | Crée automatiquement le profil dans `profiles` quand `email_confirmed_at` passe de NULL à une valeur (anti-fantômes) |
-| `update_profiles_updated_at` | `profiles`   | BEFORE UPDATE | Met à jour automatiquement `updated_at` à chaque modification                                                        |
-| `trigger_cleanup_old_todos`  | `todos`      | AFTER INSERT  | Supprime les todos de plus de 24h à chaque nouvel ajout                                                              |
-| `trigger_delete_empty_group_on_leave` | `shared_group_members` | AFTER DELETE | Supprime le groupe partagé automatiquement s'il compte moins de 2 membres après un départ.           |
+Toutes les tables ont RLS activé. Chaque utilisateur ne peut **voir, créer, modifier et supprimer que ses propres données**.
 
 ---
 
 ## 🔐 Authentification
 
-- **Email/Password** : Inscription avec confirmation email obligatoire, connexion classique
+- **Email/Password** : Inscription avec confirmation email, connexion classique
 - **OAuth** : Google et Facebook (via `/auth/callback` route handler)
-- **Middleware** (`src/middleware.ts`) : Rafraîchit la session Supabase sur chaque requête, redirige vers `/login` si non authentifié
+- **Middleware** (`src/middleware.ts`) : Rafraîchit la session Supabase + redirige vers `/login` si non authentifié
 - **Deux clients Supabase** :
   - `client.ts` : `createBrowserClient` pour les composants `"use client"`
-  - `server.ts` : `createServerClient` pour les Server Components et Route Handlers
+  - `server.ts` : `createServerClient` pour les Route Handlers
+
+---
+
+## 📱 Pages de l'Application
+
+| Route            | Composant                                              | Description                                                                             |
+| ---------------- | ------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `/`              | `GoalList` + `HabitTracker` + `TodoList` + `SharedHabitsTracker` | Page d'accueil — toutes les sections d'objectifs, collapsibles avec persistance |
+| `/login`         | `LoginPage`                                            | Connexion / Inscription (email + OAuth Google/Facebook)                                 |
+| `/stats`         | `StatsPage`                                            | Statistiques : Streak, Taux de réussite (Recharts), Calendrier mensuel                 |
+| `/profil`        | `ProfilRedirect`                                       | Redirige vers `/profil/[mon-id]`                                                        |
+| `/profil/[id]`   | `ProfilIdPage`                                         | Profil (visionneuse photo, bio en couverture, modal édition, upload avatar)             |
+| `/amis`          | `AmisPage`                                             | Recherche d'utilisateurs, liste d'amis, demandes en attente                             |
+| `/notifications` | `NotificationsPage`                                    | Historique complet des notifications                                                    |
+| `/parametres`    | `ParametresPage`                                       | Photo de profil (upload), username, nom, bio, mot de passe, thème, fuseau horaire      |
+| `/auth/callback` | Route Handler (GET)                                    | Échange le code OAuth contre une session                                                |
 
 ---
 
@@ -196,11 +266,19 @@ Documenté en détail dans [`DesignUI.md`](DesignUI.md).
 
 - **Palette** : Jaune vif (`#FFFF00` / `#ffda59`), Noir (`#000`), Gris clair (`#F4F4F4`), Blanc (`#FFF`)
 - **Couleurs fonctionnelles** : Vert (`#1fb05a`), Rouge (`#ff6b6b`), Bleu (`#4facff`), Violet (`#9d4edd`), Orange (`#ff9e00`)
-- **Police** : Montserrat (poids 400, 700, 900) en variable CSS `--font-archivo-black`
-- **Bordures** : 4px solides noires sur tous les éléments interactifs
+- **Police** : Montserrat (poids 400, 700, 900)
+- **Bordures** : 4px solides sur tous les éléments interactifs
 - **Angles** : 0px de border-radius (strict)
 - **Ombres** : Hard drop shadows (`4px 4px 0px 0px rgba(0,0,0,1)`)
 - **Classes utilitaires** : `neo-btn`, `neo-card`, `neo-input`, `neo-checkbox` (définies dans `globals.css`)
+- **Dark mode** : Icônes et bordures d'icônes en blanc, badges en noir fixe, graphiques adaptatifs
+
+### Composants UI récurrents
+
+- **Sections collapsibles** : Header cliquable avec `ChevronDown` animé, contenu en `AnimatePresence`, état persisté en `localStorage`
+- **SectionDivider** : Cibles concentriques SVG animées défilant horizontalement à l'infini
+- **SectionSkeleton** : Squelette de chargement unifié (icône + chevron + titre + badge)
+- **Animations d'entrée** : `motion.div` avec `initial={{ opacity: 0, y: 20 }}` sur toutes les sections
 
 ### Animations (Motion v12)
 
@@ -212,62 +290,44 @@ Documenté dans [`Motion.md`](Motion.md).
 
 ---
 
-## 📱 Pages de l'Application
-
-| Route            | Composant                                | Description                                                                      |
-| ---------------- | ---------------------------------------- | -------------------------------------------------------------------------------- |
-| `/`              | `page.tsx` → `HabitTracker` + `TodoList` | Page d'accueil avec grille d'objectifs hebdomadaire et liste de todos            |
-| `/login`         | `LoginPage`                              | Connexion / Inscription (email + OAuth Google/Facebook)                          |
-| `/stats`         | `StatsPage`                              | Statistiques : Streak, Taux de réussite (graphique Recharts), Calendrier mensuel |
-| `/profil`        | `ProfilRedirect`                         | Redirige vers `/profil/[mon-id]`                                                 |
-| `/profil/[id]`   | `ProfilIdPage`                           | Page de profil (propre ou d'un autre user, avec modal d'édition)                 |
-| `/amis`          | `AmisPage`                               | Recherche d'utilisateurs, liste d'amis, demandes en attente                      |
-| `/parametres`    | `ParametresPage`                         | Modifier username, nom, mot de passe, déconnexion                                |
-| `/auth/callback` | Route Handler (GET)                      | Échange le code OAuth contre une session                                         |
-
----
-
 ## 🧩 Composants Principaux
 
-### `HabitTracker.tsx` (~716 lignes)
+### Page d'accueil `/` — 4 sections empilées
 
-Le cœur de l'application. Affiche une grille hebdomadaire des objectifs du mois en cours.
+| Section                  | Composant                | Couleur icône | Par défaut |
+| ------------------------ | ------------------------ | ------------- | ---------- |
+| Objectifs long terme     | `GoalList`               | Violet        | Réduit     |
+| Objectifs répétitifs     | `HabitTracker`           | Jaune         | Réduit     |
+| Tâches temporaires       | `TodoList`               | Orange        | Réduit     |
+| Objectifs en commun      | `SharedHabitsTracker`    | Cyan          | Réduit     |
 
-- **Navigation temporelle** : Boutons précédent/suivant pour naviguer dans les jours de la semaine, bouton "Aujourd'hui"
-- **Toggle d'objectifs** : Cocher/décocher un objectif pour un jour donné (optimistic update)
-- **Modal d'ajout/édition** : Formulaire complet (nom, catégorie, fréquence, couleur, icône, heure)
-- **Suppression** : Avec confirmation et animation de sortie
-- **Couleurs prédéfinies** : `["#ffda59", "#1fb05a", "#ff6b6b", "#4facff", "#9d4edd", "#ff9e00"]`
-- **Icônes prédéfinies** : `["🎯", "🏃‍♂️", "📚", "💧", "🧘‍♂️", "💼", "🧠", "🔥", "💪", "🥦"]`
+Chaque section est séparée par un `SectionDivider` animé.
 
-### `SharedHabitsTracker.tsx` (~644 lignes)
+### `GoalList.tsx`
 
-Page principale de suivi des objectifs communs (groupes).
+- Objectifs avec date cible, couleur, catégorie, pourcentage de complétion visuel
+- Filtres par catégorie (scrollables)
+- Section collapsible avec persistance `localStorage`
 
-- **Interface Mobile-first** : Sur smartphone, les cartes d'objectifs sont entièrement cliquables pour l'édition et les boutons sont masqués (les boutons d'action d'édition et suppression habituels existent sur Desktop).
-- **Navigation Temporelle** : Sélecteur de jour carrousel pour valider l'objectif du groupe pour n'importe quelle date passée ou présente. Le filtre s'ajuste selon la fréquence de l'habitude.
-- **Gestion Avancée des Groupes** : Les users peuvent éditer le nom ou les participants, et "quitter un groupe". Les groupes vides se détruisent automatiquement.
-- **Ajout/Édition Avancé** : Le modal des habitudes inclut maintenant les mêmes paramètres qu'un Habit individuel (fréquence et période de durabilité).
-- **Animation Skeleton** : Pendant le chargement, des blocs grisés "néo-brutalistes" clignotent en fond.
+### `HabitTracker.tsx`
 
-### `Navigation.tsx` (~201 lignes)
+- Grille hebdomadaire (desktop) + sélecteur de jour mobile (carrousel)
+- Toggle optimiste + synchro Supabase
+- Modal complet (nom, catégorie, fréquence, couleur, icône, heure)
 
-Barre de navigation responsive.
+### `SharedHabitsTracker.tsx`
 
-- **Mobile** : Bottom bar fixe avec 5 onglets (Accueil, Stats, Amis, Paramètres) + avatar profil
-- **Desktop** : Sidebar latérale gauche
-- **Onglets** : Home (`/`), Stats (`/stats`), Amis (`/amis`), Paramètres (`/parametres`)
-- Charge le profil utilisateur pour afficher l'avatar
+- Groupes collaboratifs avec membres
+- Barre de progression de completion par objectif
+- Navigation temporelle (sélecteur de jour)
+- Intégré dans la page `/` (plus de page dédiée `/partages`)
 
-### `TodoList.tsx` (~186 lignes)
+### `Navigation.tsx`
 
-Liste de tâches temporaires (24h).
-
-- **Ajout** avec optimistic update
-- **Toggle** complétion
-- **Suppression**
-- **Tri** : Non complétés en premier, puis complétés
-- **Auto-cleanup** : Les todos de plus de 24h sont supprimés automatiquement via un trigger SQL
+- **Mobile** : Bottom bar fixe avec 4 onglets (Objectifs, Stats, Amis, Paramètres) + avatar profil
+- **Desktop** : Header fixe avec disparition au scroll bas et réapparition au scroll haut
+- Bouton Notifications avec badge de compteur non-lus
+- Synchronisation automatique du fuseau horaire
 
 ---
 
@@ -275,47 +335,78 @@ Liste de tâches temporaires (24h).
 
 ### `authService.ts`
 
-- `signUpWithEmail(email, password, username)` — Inscription avec metadata username
-- `signInWithEmail(email, password)` — Connexion classique
-- `signInWithOAuth(provider)` — Connexion OAuth (Google/Facebook)
-- `signOut()` — Déconnexion
-- `getUser()` / `getSession()` — Récupérer l'utilisateur/session
-- `getProfile()` / `updateProfile(updates)` — Lecture/écriture dans `profiles`
-- `resetPassword(email)` / `updatePassword(newPassword)` — Gestion mot de passe
-- `onAuthStateChange(callback)` — Listener temps réel
+- `signUpWithEmail`, `signInWithEmail`, `signInWithOAuth`, `signOut`
+- `getUser()`, `getSession()`, `getProfile()`, `updateProfile(updates)`
+- `uploadAvatar(file)` — Upload vers Supabase Storage bucket `avatars` + mise à jour `avatar_url`
+- `resetPassword(email)`, `updatePassword(newPassword)`
+- `onAuthStateChange(callback)`
 
 ### `habitService.ts`
 
-- `fetchHabits()` — Récupère les habits du mois courant + leurs logs, retourne des `UIHabit[]`
-- `addHabit(name, category, frequency, color, icon, time?)` — Crée un objectif pour le mois courant
-- `updateHabit(habitId, ...)` — Met à jour un objectif
-- `deleteHabit(habitId)` — Supprime un objectif
-- `toggleLog(habitId, dayOrDate)` — Cocher/décocher (gère jour de la semaine ou date YYYY-MM-DD)
-- `getStreak()` → `StreakStats` — Calcule la série actuelle + récupère le record
-- `getRecentLogs()` → `DailyActivityLog[]` — Jours composant la série actuelle
-- `getMonthlyStats(targetDate)` → `MonthlyStatsData` — Stats calendrier mensuel
-- `getSuccessRate(filter: "day"|"week"|"month")` → `SuccessRatePoint[]` — Données pour le graphique Recharts
+- `fetchHabits()` → `UIHabit[]`
+- `addHabit`, `updateHabit`, `deleteHabit`
+- `toggleLog(habitId, dayOrDate)` — Optimistic update
+- `getStreak()` → `StreakStats`
+- `getRecentLogs()` → `DailyActivityLog[]`
+- `getMonthlyStats(targetDate)` → `MonthlyStatsData`
+- `getSuccessRate(filter)` → `SuccessRatePoint[]`
+
+### `goalService.ts`
+
+- `fetchGoals()` → `Goal[]`
+- `addGoal`, `updateGoal`, `deleteGoal`
+- `toggleGoalCompletion(goalId, is_completed)`
 
 ### `todoService.ts`
 
-- `fetchTodos()` — Récupère les todos des dernières 24h
-- `addTodo(title)` — Ajoute un todo
-- `toggleTodo(id, is_completed)` — Toggle complétion
-- `deleteTodo(id)` — Supprime un todo
+- `fetchTodos()`, `addTodo(title, time?)`, `toggleTodo`, `deleteTodo`
 
 ### `friendService.ts`
 
-- `searchByUsername(query)` — Recherche partielle insensible à la casse
-- `getProfileById(userId)` — Récupère le profil public d'un utilisateur
-- `getFriends()`, `getPendingRequests()` — Liste des amis et demandes en cours
-- `sendFriendRequest(friendId)`, `acceptFriendRequest()`, `rejectFriendRequest()`, `removeFriend()` — Actions d'amitié
+- `searchByUsername`, `getProfileById`, `getFriends`, `getPendingRequests`
+- `sendFriendRequest`, `acceptFriendRequest`, `rejectFriendRequest`, `removeFriend`
 
 ### `sharedHabitService.ts`
 
-- `createGroup()`, `updateGroup()`, `deleteSharedGroup()`, `fetchUserGroups()` — Gestion complète du cycle de vie des groupes
-- `inviteUserToGroup()`, `leaveGroup()`, `removeMember()` — Gestion des membres au sein du groupe
-- `addSharedHabit()`, `updateSharedHabit()`, `deleteSharedHabit()`, `fetchHabitsByGroup()` — CRUD des objectifs liés au groupe
-- `toggleLog()` — Validation d'un objectif de groupe par journée pour un utilisateur précis
+- `createGroup`, `updateGroup`, `deleteSharedGroup`, `fetchUserGroups`, `leaveGroup`
+- `inviteUserToGroup`, `removeMember`
+- `addSharedHabit`, `updateSharedHabit`, `deleteSharedHabit`, `fetchHabitsByGroup`
+- `toggleLog()` — Validation d'un objectif commun
+
+### `notificationService.ts`
+
+- `getNotifications()`, `getUnreadCount()`
+- `markAsRead`, `markAllAsRead`, `deleteNotification`, `clearAll`
+- `subscribe(userId, onNew)` — Listener temps réel (Supabase Realtime)
+
+---
+
+## 🔔 Notifications Push (OneSignal + Cron)
+
+### Cron Job Vercel (`/api/cron/remind`)
+
+S'exécute chaque jour à **6h UTC**. Pour chaque utilisateur avec des habitudes actives :
+
+| Moment            | Heure locale | Message                                     |
+| ----------------- | ------------ | ------------------------------------------- |
+| ☀️ Matin         | 7h           | "X objectifs aujourd'hui !"                 |
+| 🔔 Après-midi    | 14h          | "N'oublie pas tes objectifs !"              |
+| 🌙 Soir          | 21h          | "Dernière chance pour valider !"            |
+| ⏰ Heure exacte  | Définie      | "C'est l'heure : [nom de l'objectif] !"     |
+| ⏰ 10 min avant  | H-10min      | "[Objectif] dans 10 min"                    |
+
+Les rappels Todo avec heure définie sont également programmés.
+
+Tous les horaires sont **adaptés au fuseau horaire de l'utilisateur** (colonne `timezone` dans `profiles`).
+
+### Notifications in-app
+
+| Type              | Déclencheur                                | Lien    |
+| ----------------- | ------------------------------------------ | ------- |
+| `friend_request`  | Nouvelle demande d'ami reçue               | `/amis` |
+| `friend_request`  | Demande d'ami acceptée                     | `/amis` |
+| `group_invite`    | Invitation dans un groupe partagé          | `/`     |
+| `habit_completed` | Un membre du groupe valide un objectif     | `/`     |
 
 ---
 
@@ -326,19 +417,22 @@ Liste de tâches temporaires (24h).
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIs...
+SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIs...
+NEXT_PUBLIC_ONESIGNAL_APP_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+ONESIGNAL_REST_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+CRON_SECRET=votre_secret_cron
 ```
 
 ### Next.js (`next.config.ts`)
 
 - **PWA** via `@ducanh2912/next-pwa` (désactivée en dev)
-- **Images distantes autorisées** : `lh3.googleusercontent.com` (Google), `platform-lookaside.fbsbx.com` et `graph.facebook.com` (Facebook)
+- **Images distantes autorisées** : `*.supabase.co` (avatars Storage), `lh3.googleusercontent.com`, Facebook
 
 ### Tailwind (`tailwind.config.ts`)
 
 - Couleurs custom : `primary`, `background`, `surface`, `foreground`, `muted`
 - Ombres custom : `neo` (4px), `neo-sm` (2px)
-- Bordure custom : `3` (3px)
-- Police : `sans` → Montserrat via `--font-archivo-black`
+- Police : `sans` → Montserrat
 
 ---
 
@@ -352,10 +446,13 @@ npm install
 npm run dev
 
 # Build production
-npm run build
+npx next build --webpack
 
 # Démarrage production
 npm start
+
+# Déploiement Vercel
+vercel --prod
 ```
 
 ---
@@ -366,22 +463,49 @@ npm start
 
 1. Créer un projet sur [Supabase](https://supabase.com)
 2. Ouvrir le **SQL Editor** dans le dashboard
-3. Copier/coller le contenu de `supabase/fresh_setup.sql` et cliquer **Run**
-4. (Optionnel) Après avoir créé un compte utilisateur, exécuter `supabase/seed.sql` pour des données de test
+3. Exécuter `supabase/fresh_setup.sql` (**Run**)
+4. (Optionnel) Exécuter `supabase/seed.sql` pour des données de test
 
-### Migrations (mises à jour incrémentales)
+### Migrations nécessaires (à appliquer dans l'ordre)
 
-Les migrations dans `supabase/migrations/` sont ordonnées numériquement et documentent l'évolution du schéma.
+```
+018_long_term_goals.sql       → Table goals
+add_timezone_to_profiles.sql  → Colonne timezone
+020_avatars_bucket.sql        → Bucket Storage avatars
+021_profile_bio.sql           → Colonne bio dans profiles
+022_fix_notification_links.sql → Correction liens /partages → /
+```
+
+> ⚠️ Les migrations 020 et suivantes sont **indépendantes du fresh_setup.sql** et doivent être appliquées manuellement dans Supabase SQL Editor sur un projet existant.
 
 ---
 
-## 🔮 Fonctionnalités à venir / En cours
+## 🗂️ Historique des Migrations
 
-- [ ] **Profil public étendu** : Afficher les statistiques d'un autre utilisateur sur sa page profil
-- [ ] **Mode sombre** : Variante dark du thème néo-brutaliste
+| Fichier                                 | Description                                                |
+| --------------------------------------- | ---------------------------------------------------------- |
+| `001_update_handle_new_user.sql`        | Trigger anti-fantômes (profil créé à la confirmation)      |
+| `002_cleanup_ghost_users.sql`           | Nettoyage des profils fantômes existants                   |
+| `003_temporary_todos.sql`               | Table todos + trigger auto-cleanup 24h                     |
+| `004_monthly_habits.sql`                | Contraintes date mensuelle sur les habitudes               |
+| `006_add_profile_widgets.sql`           | Colonne `profile_widgets` dans profiles                    |
+| `007_add_policy_habits.sql`             | Policies RLS supplémentaires pour habits                   |
+| `008_add_policy_todo.sql`               | Policies RLS pour todos                                    |
+| `009_habit_date_range.sql`              | Plage de dates start/end sur les habitudes                 |
+| `010_friendships.sql`                   | Table friendships + RLS                                    |
+| `011_add_habit_categories.sql`          | Enum catégories d'habitudes                                |
+| `012_shared_habits.sql`                 | Tables groupes partagés + membres + objectifs + logs       |
+| `013_auto_delete_empty_groups.sql`      | Suppression automatique des groupes vides                  |
+| `014_notifications.sql`                 | Table notifications + triggers amis/groupes                |
+| `015_notify_shared_habit_log.sql`       | Trigger notif à la validation d'un objectif commun         |
+| `016_enable_realtime.sql`               | Activation Supabase Realtime sur les tables clés           |
+| `017_add_time_to_todos.sql`             | Colonne `time` optionnelle sur les todos                   |
+| `018_long_term_goals.sql`               | Table goals (objectifs long terme)                         |
+| `add_timezone_to_profiles.sql`          | Colonne `timezone` dans profiles                           |
+| `020_avatars_bucket.sql`                | Bucket Storage pour photos de profil + policies RLS        |
+| `021_profile_bio.sql`                   | Colonne `bio TEXT` dans profiles                           |
+| `022_fix_notification_links.sql`        | Correction des liens `/partages` → `/` dans les triggers   |
 
 ---
 
-_Dernière mise à jour de ce README : 17 Mars 2026_
-
-# K-Productivity
+_Dernière mise à jour de ce README : 31 Mars 2026_

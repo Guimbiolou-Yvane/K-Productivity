@@ -5,11 +5,13 @@ import { motion, AnimatePresence } from "motion/react";
 import { ChevronDown, Repeat } from "lucide-react";
 import { habitService } from "@/lib/services/habitService";
 import { UIHabit, HabitCategory } from "@/lib/models/habit";
-import { getMonthDays } from "./habit-tracker/constants";
-import HabitSkeleton from "./habit-tracker/HabitSkeleton";
+import { getDayInfo, addDaysFormat, isOutsideDates } from "./habit-tracker/constants";
+import SectionInfo from "./SectionInfo";
+import SectionSkeleton from "@/components/SectionSkeleton";
 import HabitTableDesktop from "./habit-tracker/HabitTableDesktop";
 import HabitListMobile from "./habit-tracker/HabitListMobile";
 import HabitModal, { type HabitFormData } from "./habit-tracker/HabitModal";
+import ExpiredHabitModal from "./habit-tracker/ExpiredHabitModal";
 import { supabase } from "@/lib/supabase/client";
 
 interface HabitTrackerProps {
@@ -44,16 +46,27 @@ export default function HabitTracker({
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [habitToEdit, setHabitToEdit] = useState<UIHabit | null>(null);
+  const [expiredHabitEdit, setExpiredHabitEdit] = useState<UIHabit | null>(null);
 
-  // Navigation de jour (mobile) — index dans le mois entier
-  const monthDays = useMemo(() => getMonthDays(), []);
-  const todayIdx = useMemo(() => {
-    const idx = monthDays.findIndex((d) => d.isToday);
-    return idx >= 0 ? idx : 0;
-  }, [monthDays]);
-
-  const [currentDayIdx, setCurrentDayIdx] = useState(todayIdx);
+  // Navigation de jour (mobile) — index infini
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    return new Date().toISOString().split("T")[0];
+  });
   const [direction, setDirection] = useState(0);
+
+  // === CALCUL DU NOMBRE D'OBJECTIFS DU JOUR ===
+  const activeHabitsToday = useMemo(() => {
+    const todayStr = new Date().toISOString().split("T")[0];
+    const todayObj = getDayInfo(todayStr);
+
+    return habits.filter((h) => {
+      if (isOutsideDates(h, todayObj.date)) return false;
+      if (h.frequency && h.frequency.length > 0) {
+        return h.frequency.includes(todayObj.dayName);
+      }
+      return true;
+    });
+  }, [habits]);
 
   // === CHARGEMENT ===
 
@@ -175,26 +188,28 @@ export default function HabitTracker({
     setIsModalOpen(true);
   };
 
-  // === NAVIGATION DE JOUR (mobile) — parcourt tout le mois ===
+  // === NAVIGATION DE JOUR (mobile) — infini ===
 
   const handlePrevDay = () => {
-    if (currentDayIdx > 0) {
-      setDirection(-1);
-      setCurrentDayIdx((prev) => prev - 1);
-    }
+    setDirection(-1);
+    setSelectedDate((prev) => addDaysFormat(prev, -1));
   };
 
   const handleNextDay = () => {
-    if (currentDayIdx < monthDays.length - 1) {
-      setDirection(1);
-      setCurrentDayIdx((prev) => prev + 1);
-    }
+    setDirection(1);
+    setSelectedDate((prev) => addDaysFormat(prev, 1));
   };
 
   const goToToday = () => {
-    if (currentDayIdx === todayIdx) return;
-    setDirection(todayIdx > currentDayIdx ? 1 : -1);
-    setCurrentDayIdx(todayIdx);
+    const todayStr = new Date().toISOString().split("T")[0];
+    if (selectedDate === todayStr) return;
+    setDirection(todayStr > selectedDate ? 1 : -1);
+    setSelectedDate(todayStr);
+  };
+
+  const selectSpecificDate = (date: string) => {
+    setDirection(date > selectedDate ? 1 : -1);
+    setSelectedDate(date);
   };
 
   // === RENDU ===
@@ -209,9 +224,7 @@ export default function HabitTracker({
     return habits.filter((h) => h.category === categoryFilter);
   }, [habits, categoryFilter]);
 
-  if (isLoading && habits.length === 0) {
-    return <HabitSkeleton />;
-  }
+  if (isLoading && habits.length === 0) return <SectionSkeleton />;
 
   return (
     <motion.div
@@ -220,13 +233,13 @@ export default function HabitTracker({
       transition={{ type: "spring", stiffness: 300, damping: 30 }}
       className="w-full px-4 md:px-8 mt-4 mb-2 flex flex-col items-center max-w-6xl mx-auto font-sans"
     >
-      {/* HEADER RÉDUCTIBLE */}
+      {/* HEADER RÉDUCTIBLE (Titre hors du rectangle) */}
       <button
         onClick={toggleCollapse}
-        className="flex items-center gap-3 mb-4 w-full text-left group cursor-pointer"
+        className="flex items-center gap-3 mb-6 w-full text-left group cursor-pointer"
       >
-        <div className="w-9 h-9 flex items-center justify-center bg-primary dark:bg-primary/30 border-[3px] border-foreground dark:border-gray-500 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(100,100,100,0.3)] shrink-0">
-          <Repeat size={18} strokeWidth={3} className="dark:text-gray-300" />
+        <div className="w-9 h-9 flex items-center justify-center bg-primary dark:bg-primary/30 border-[3px] border-foreground dark:border-white shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(100,100,100,0.3)] shrink-0">
+          <Repeat size={18} strokeWidth={3} className="dark:text-white" />
         </div>
         <motion.div
           animate={{ rotate: isCollapsed ? -90 : 0 }}
@@ -238,8 +251,20 @@ export default function HabitTracker({
         <h2 className="text-xl sm:text-2xl font-black uppercase text-foreground">
           Objectifs répétitifs
         </h2>
+        <SectionInfo
+          title="Habitudes & Répétitions"
+          description="Des objectifs que vous souhaitez accomplir régulièrement. L'objectif est de maintenir votre 'streak' (série) et de créer une routine durable."
+          example="Méditer 10 min, Boire 2L d'eau, Lire 15 pages"
+        />
+        <div className="bg-green-100 border-2 border-black px-2 py-0.5 rounded flex items-center gap-1.5 shadow-[1px_1px_0px_0px_rgba(0,0,0,1)] ml-auto">
+          <Repeat size={12} strokeWidth={3} className="text-black" />
+          <span className="text-[10px] font-black uppercase text-black">
+            {activeHabitsToday.length} du jour
+          </span>
+        </div>
       </button>
 
+      {/* CONTENU (Dans le rectangle) */}
       <AnimatePresence initial={false}>
         {!isCollapsed && (
           <motion.div
@@ -249,33 +274,35 @@ export default function HabitTracker({
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
             className="w-full overflow-hidden"
           >
-      <div className="w-full">
-        <HabitTableDesktop
-          habits={filteredHabits}
-          onToggle={toggleHabit}
-          onEdit={openEditModal}
-          onAdd={openAddModal}
-          readOnly={readOnly}
-          availableCategories={availableCategories}
-          categoryFilter={categoryFilter}
-          setCategoryFilter={setCategoryFilter}
-        />
-        <HabitListMobile
-          habits={filteredHabits}
-          currentDayIdx={currentDayIdx}
-          direction={direction}
-          onToggle={toggleHabit}
-          onEdit={openEditModal}
-          onAdd={openAddModal}
-          onPrevDay={handlePrevDay}
-          onNextDay={handleNextDay}
-          onGoToToday={goToToday}
-          readOnly={readOnly}
-          availableCategories={availableCategories}
-          categoryFilter={categoryFilter}
-          setCategoryFilter={setCategoryFilter}
-        />
-      </div>
+            <div className="w-full bg-background border-4 border-foreground shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] sm:shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] p-4 sm:p-6 pb-6">
+              <HabitTableDesktop
+                habits={filteredHabits}
+                onToggle={toggleHabit}
+                onEdit={openEditModal}
+                onAdd={openAddModal}
+                readOnly={readOnly}
+                availableCategories={availableCategories}
+                categoryFilter={categoryFilter}
+                setCategoryFilter={setCategoryFilter}
+              />
+              <HabitListMobile
+                habits={filteredHabits}
+                selectedDate={selectedDate}
+                direction={direction}
+                onToggle={toggleHabit}
+                onEdit={openEditModal}
+                onExpiredClick={(h) => setExpiredHabitEdit(h)}
+                onAdd={openAddModal}
+                onPrevDay={handlePrevDay}
+                onNextDay={handleNextDay}
+                onGoToToday={goToToday}
+                onSelectDate={selectSpecificDate}
+                readOnly={readOnly}
+                availableCategories={availableCategories}
+                categoryFilter={categoryFilter}
+                setCategoryFilter={setCategoryFilter}
+              />
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -286,6 +313,17 @@ export default function HabitTracker({
         habitToEdit={habitToEdit}
         onSave={handleSave}
         onDelete={handleDelete}
+      />
+
+      <ExpiredHabitModal
+        habit={expiredHabitEdit}
+        onClose={() => setExpiredHabitEdit(null)}
+        onConcluded={(hId) => {
+          setHabits([...habits]); 
+        }}
+        onExtended={(hId) => {
+          loadHabits();
+        }}
       />
     </motion.div>
   );

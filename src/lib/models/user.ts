@@ -5,6 +5,7 @@ export interface UserProfile {
   last_name?: string; // Nom (optionnel)
   username: string; // Pseudo affiché
   avatar_url?: string; // Lien vers l'image de profil (optionnel)
+  bio?: string;         // Biographie (affichée en couverture)
   profile_widgets?: string[]; // Widgets affichés sur le profil
   timezone?: string; // Fuseau horaire IANA (ex: "Europe/Paris", "Africa/Douala")
 

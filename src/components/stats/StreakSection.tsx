@@ -41,8 +41,8 @@ export default function StreakSection({ currentStreak, bestStreak, recentLogs }:
         >
           <div className="flex items-center gap-3 sm:gap-4 z-10 w-full justify-between">
             <div className="flex items-center gap-3 sm:gap-4">
-              <div className="w-10 h-10 sm:w-16 sm:h-16 bg-[#ffda59] border-2 sm:border-4 border-foreground shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center shrink-0 -rotate-3">
-                <Trophy className="text-foreground w-5 h-5 sm:w-8 sm:h-8" strokeWidth={2.5} />
+              <div className="w-10 h-10 sm:w-16 sm:h-16 bg-[#ffda59] border-2 sm:border-4 border-black shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] flex items-center justify-center shrink-0 -rotate-3">
+                <Trophy className="text-black w-5 h-5 sm:w-8 sm:h-8" strokeWidth={2.5} />
               </div>
               <span className="font-black uppercase text-base sm:text-2xl tracking-tighter">Record Absolu</span>
             </div>

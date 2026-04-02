@@ -53,24 +53,25 @@ export default function SuccessRateSection({ filter, onFilterChange, data }: Suc
               <BarChart data={data} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
                 <CartesianGrid
                   strokeDasharray="0"
-                  stroke="rgba(0,0,0,0.08)"
+                  stroke="var(--foreground)"
+                  strokeOpacity={0.2}
                   vertical={false}
                 />
                 <XAxis
                   dataKey="label"
-                  stroke="#000"
+                  stroke="var(--foreground)"
                   strokeWidth={2}
                   tick={{
-                    fill: "#000",
+                    fill: "var(--foreground)",
                     fontWeight: 900,
                     fontSize: 11,
                   }}
                   tickLine={false}
                 />
                 <YAxis
-                  stroke="#000"
+                  stroke="var(--foreground)"
                   strokeWidth={2}
-                  tick={{ fill: "#000", fontWeight: 900, fontSize: 11 }}
+                  tick={{ fill: "var(--foreground)", fontWeight: 900, fontSize: 11 }}
                   tickLine={false}
                   domain={[0, 100]}
                   tickFormatter={(v) => `${v}%`}
@@ -89,11 +90,11 @@ export default function SuccessRateSection({ filter, onFilterChange, data }: Suc
                     }
                     return null;
                   }}
-                  cursor={{ fill: "rgba(0,0,0,0.05)" }}
+                  cursor={{ fill: "var(--foreground)", opacity: 0.05 }}
                 />
                 <Bar
                   dataKey="rate"
-                  stroke="#000"
+                  stroke="var(--foreground)"
                   strokeWidth={3}
                   radius={[0, 0, 0, 0]}
                   isAnimationActive={true}

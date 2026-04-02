@@ -12,7 +12,7 @@
 }
 
 .dark {
-  --primary: #f43f5e; /* Rose néo-brutaliste (Tailwind rose-500) */
+  --primary: #16a34a; /* Vert plus sombre (Tailwind green-600) */
   --background: #18181b;
   --surface: #27272a;
   --foreground: #d4d4d8;

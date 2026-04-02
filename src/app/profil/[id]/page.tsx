@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
-import { User, Users, Pencil, Check, X, Camera, ImagePlus, UserPlus, UserCheck, Clock } from "lucide-react";
+import { User, Users, Pencil, Check, X, Camera, Loader2, UserPlus, UserCheck, Clock } from "lucide-react";
 import Image from "next/image";
 import { authService } from "@/lib/services/authService";
 import { friendService } from "@/lib/services/friendService";
@@ -21,7 +21,7 @@ export default function ProfilIdPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [mode, setMode] = useState<ProfileMode>("own");
   const [selectedWidgets, setSelectedWidgets] = useState<string[]>([]);
-  
+
   // Amitié
   const [friendship, setFriendship] = useState<any>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -31,20 +31,26 @@ export default function ProfilIdPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editFirstName, setEditFirstName] = useState("");
   const [editLastName, setEditLastName] = useState("");
-  const [editAvatarUrl, setEditAvatarUrl] = useState("");
+  const [editBio, setEditBio] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+
+  // Modal photo de profil (visionneuse)
+  const [showAvatarModal, setShowAvatarModal] = useState(false);
+
+  // Upload avatar
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [uploadError, setUploadError] = useState("");
 
   useEffect(() => {
     setMounted(true);
     const loadProfile = async () => {
       try {
-        // Déterminer si c'est mon profil ou celui d'un autre
         const currentUser = await authService.getUser();
         const isOwn = currentUser?.id === profileId;
         setMode(isOwn ? "own" : "other");
 
-        // Charger le profil (le mien ou celui d'un autre)
         let data: UserProfile | null;
         if (isOwn) {
           data = await authService.getProfile();
@@ -58,12 +64,11 @@ export default function ProfilIdPage() {
         }
 
         setProfile(data);
-        // Charger les widgets depuis le profil (propres à chaque utilisateur)
         setSelectedWidgets(data?.profile_widgets || DEFAULT_WIDGETS);
         if (data && isOwn) {
           setEditFirstName(data.first_name || "");
           setEditLastName(data.last_name || "");
-          setEditAvatarUrl(data.avatar_url || "");
+          setEditBio(data.bio || "");
         }
       } catch (error) {
         console.error("Erreur chargement profil:", error);
@@ -78,7 +83,7 @@ export default function ProfilIdPage() {
     if (!profile) return;
     setEditFirstName(profile.first_name || "");
     setEditLastName(profile.last_name || "");
-    setEditAvatarUrl(profile.avatar_url || "");
+    setEditBio(profile.bio || "");
     setSaveError("");
     setShowEditModal(true);
   };
@@ -90,7 +95,7 @@ export default function ProfilIdPage() {
       const updated = await authService.updateProfile({
         first_name: editFirstName.trim() || undefined,
         last_name: editLastName.trim() || undefined,
-        avatar_url: editAvatarUrl.trim() || undefined,
+        bio: editBio.trim() || undefined,
       });
       setProfile(updated);
       setShowEditModal(false);
@@ -101,27 +106,46 @@ export default function ProfilIdPage() {
     }
   };
 
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 3 * 1024 * 1024) {
+      setUploadError("La photo ne doit pas dépasser 3 Mo.");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setUploadError("Veuillez sélectionner une image valide.");
+      return;
+    }
+    setUploadError("");
+    setIsUploadingAvatar(true);
+    try {
+      const url = await authService.uploadAvatar(file);
+      setProfile((prev) => prev ? { ...prev, avatar_url: url } : prev);
+    } catch (err: any) {
+      setUploadError(err?.message || "Erreur lors de l'upload.");
+    } finally {
+      setIsUploadingAvatar(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
+    }
+  };
+
   const handleFriendAction = async () => {
     if (!profile || isFriendActionLoading || !currentUserId) return;
     setIsFriendActionLoading(true);
-    
     try {
       if (!friendship) {
-        // Aucune relation -> envoyer demande
         const newReq = await friendService.sendFriendRequest(profile.id);
         setFriendship(newReq);
       } else if (friendship.status === "pending") {
         if (friendship.friend_id === currentUserId) {
-          // Demande reçue -> accepter
           await friendService.acceptFriendRequest(friendship.id);
           setFriendship({ ...friendship, status: "accepted" });
         } else {
-          // Demande envoyée -> annuler
           await friendService.rejectFriendRequest(friendship.id);
           setFriendship(null);
         }
       } else if (friendship.status === "accepted") {
-        // Déjà ami -> supprimer
         if (window.confirm("Voulez-vous vraiment retirer cet utilisateur de vos amis ?")) {
           await friendService.removeFriend(profile.id);
           setFriendship(null);
@@ -135,7 +159,6 @@ export default function ProfilIdPage() {
     }
   };
 
-  // --- SKELETON LOADING ---
   if (!mounted || isLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center max-w-4xl mx-auto font-sans pb-32 overflow-x-hidden">
@@ -179,38 +202,91 @@ export default function ProfilIdPage() {
       {/* SECTION HEADER : COVER + AVATAR */}
       {/* ============================== */}
       <div className="w-full relative">
-        {/* COUVERTURE */}
-        <div className="w-full h-44 sm:h-56 border-b-4 border-foreground bg-gradient-to-br from-primary via-[#ffda59] to-[#ff6b6b] relative overflow-hidden">
+        {/* COUVERTURE — Bio en grand en arrière-plan */}
+        <div className="w-full h-44 sm:h-56 border-b-4 border-foreground bg-gradient-to-br from-primary via-[#ffda59] to-[#ff6b6b] relative overflow-hidden flex items-center justify-center">
           {/* Motif décoratif néo-brutaliste */}
           <div className="absolute inset-0 opacity-[0.06]" style={{
-            backgroundImage: `repeating-linear-gradient(
-              45deg,
-              #000 0px, #000 2px,
-              transparent 2px, transparent 20px
-            )`
+            backgroundImage: `repeating-linear-gradient(45deg, #000 0px, #000 2px, transparent 2px, transparent 20px)`
           }} />
+
+          {/* BIO en grand en couverture */}
+          {profile.bio && (
+            <div className="absolute inset-0 flex items-center justify-center px-6 pointer-events-none">
+              <p
+                className="text-center font-black text-white uppercase leading-tight select-none"
+                style={{
+                  fontSize: "clamp(1.4rem, 4vw, 3rem)",
+                  textShadow: "3px 3px 0px rgba(0,0,0,0.35)",
+                  opacity: 0.92,
+                  letterSpacing: "0.02em",
+                  wordBreak: "break-word",
+                  maxWidth: "90%",
+                }}
+              >
+                {profile.bio}
+              </p>
+            </div>
+          )}
         </div>
 
-        {/* AVATAR */}
+        {/* AVATAR cliquable */}
         <div className="absolute left-1/2 -translate-x-1/2 -bottom-16 sm:-bottom-20 z-10">
-          <motion.div
-            initial={{ scale: 0.8, y: 20 }}
-            animate={{ scale: 1, y: 0 }}
-            transition={{ type: "spring", stiffness: 400, damping: 25, delay: 0.1 }}
-            className="w-28 h-28 sm:w-36 sm:h-36 rounded-full border-[6px] border-foreground bg-primary overflow-hidden flex items-center justify-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]"
-          >
-            {profile.avatar_url ? (
-              <Image
-                src={profile.avatar_url}
-                alt={profile.username}
-                width={144}
-                height={144}
-                className="object-cover w-full h-full"
-              />
-            ) : (
-              <User strokeWidth={2} className="w-12 h-12 sm:w-16 sm:h-16 text-foreground" />
+          <div className="relative group/avatar">
+            <motion.div
+              initial={{ scale: 0.8, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              transition={{ type: "spring", stiffness: 400, damping: 25, delay: 0.1 }}
+              className="w-28 h-28 sm:w-36 sm:h-36 rounded-full border-[6px] border-foreground bg-primary overflow-hidden flex items-center justify-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] cursor-pointer"
+              onClick={() => profile.avatar_url && setShowAvatarModal(true)}
+            >
+              {isUploadingAvatar ? (
+                <Loader2 size={36} className="text-foreground animate-spin" />
+              ) : profile.avatar_url ? (
+                <Image
+                  src={profile.avatar_url}
+                  alt={profile.username}
+                  width={144}
+                  height={144}
+                  className="object-cover w-full h-full"
+                />
+              ) : (
+                <User strokeWidth={2} className="w-12 h-12 sm:w-16 sm:h-16 text-foreground" />
+              )}
+            </motion.div>
+
+            {/* Bouton upload avatar (mode own seulement) */}
+            {mode === "own" && (
+              <>
+                <button
+                  onClick={() => avatarInputRef.current?.click()}
+                  disabled={isUploadingAvatar}
+                  title="Changer la photo de profil"
+                  className="absolute inset-0 rounded-full flex items-end justify-center pb-1.5 bg-black/0 group-hover/avatar:bg-black/40 transition-all cursor-pointer disabled:cursor-wait"
+                >
+                  {!isUploadingAvatar && (
+                    <span className="flex items-center gap-1 text-white text-[10px] font-black uppercase opacity-0 group-hover/avatar:opacity-100 transition-opacity bg-black/60 px-2 py-0.5 rounded-full">
+                      <Camera size={12} strokeWidth={3} />
+                      Modifier
+                    </span>
+                  )}
+                </button>
+                <input
+                  ref={avatarInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleAvatarChange}
+                />
+              </>
             )}
-          </motion.div>
+          </div>
+
+          {/* Erreur upload */}
+          {uploadError && (
+            <p className="mt-2 text-red-600 font-bold text-xs text-center bg-red-50 border border-red-400 px-2 py-1 max-w-[180px]">
+              {uploadError}
+            </p>
+          )}
         </div>
       </div>
 
@@ -244,7 +320,6 @@ export default function ProfilIdPage() {
       >
         {mode === "own" ? (
           <>
-            {/* BOUTON MODIFIER (MON PROFIL) */}
             <motion.button
               whileTap={{ scale: 0.95 }}
               onClick={openEditModal}
@@ -254,11 +329,10 @@ export default function ProfilIdPage() {
               Modifier
             </motion.button>
 
-            {/* BOUTON AMIS (DÉSACTIVÉ) */}
             <motion.button
               whileTap={{ scale: 0.95 }}
               disabled
-              className="neo-btn !bg-surface flex items-center gap-2 !px-5 !py-3 text-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:translate-x-0 disabled:hover:translate-y-0 disabled:hover:shadow-neo"
+              className="neo-btn !bg-surface flex items-center gap-2 !px-5 !py-3 text-sm disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <Users size={18} strokeWidth={3} />
               Amis
@@ -266,21 +340,20 @@ export default function ProfilIdPage() {
           </>
         ) : (
           <>
-            {/* BOUTON S'ASSOCIER (PROFIL D'UN AUTRE) */}
             <motion.button
               whileTap={{ scale: 0.95 }}
               onClick={handleFriendAction}
               disabled={isFriendActionLoading}
               className={`neo-btn flex items-center gap-2 !px-5 !py-3 text-sm disabled:opacity-50 ${
-                friendship?.status === "accepted" 
-                  ? "!bg-[#1fb05a]" 
-                  : friendship?.status === "pending" 
-                    ? "!bg-yellow-400 text-black" 
+                friendship?.status === "accepted"
+                  ? "!bg-[#1fb05a]"
+                  : friendship?.status === "pending"
+                    ? "!bg-yellow-400 text-black"
                     : "!bg-primary"
               }`}
             >
               {isFriendActionLoading ? (
-                 <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="w-4 h-4 border-2 border-foreground border-t-transparent rounded-full" />
+                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: "linear" }} className="w-4 h-4 border-2 border-foreground border-t-transparent rounded-full" />
               ) : friendship?.status === "accepted" ? (
                 <><UserCheck size={18} strokeWidth={3} /> Amis</>
               ) : friendship?.status === "pending" ? (
@@ -305,7 +378,52 @@ export default function ProfilIdPage() {
       </div>
 
       {/* ============================== */}
-      {/* MODAL D'ÉDITION (UNIQUEMENT MODE OWN) */}
+      {/* MODAL VISIONNEUSE PHOTO */}
+      {/* ============================== */}
+      <AnimatePresence>
+        {showAvatarModal && profile.avatar_url && (
+          <motion.div
+            key="avatar-viewer"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4"
+            onClick={() => setShowAvatarModal(false)}
+          >
+            <motion.div
+              initial={{ scale: 0.85, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.85, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              className="relative max-w-sm w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="w-full aspect-square rounded-full border-[6px] border-white overflow-hidden shadow-[8px_8px_0px_0px_rgba(255,255,255,0.2)]">
+                <Image
+                  src={profile.avatar_url}
+                  alt={profile.username}
+                  width={480}
+                  height={480}
+                  className="object-cover w-full h-full"
+                />
+              </div>
+              <p className="text-center text-white font-black uppercase text-lg mt-4 tracking-tight">
+                {profile.username}
+              </p>
+              <button
+                onClick={() => setShowAvatarModal(false)}
+                className="absolute -top-3 -right-3 w-9 h-9 bg-white border-4 border-foreground rounded-full flex items-center justify-center shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]"
+              >
+                <X size={16} strokeWidth={4} className="text-foreground" />
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ============================== */}
+      {/* MODAL D'ÉDITION (MODE OWN) */}
       {/* ============================== */}
       {mode === "own" && (
         <AnimatePresence>
@@ -325,10 +443,10 @@ export default function ProfilIdPage() {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9, y: 30 }}
                 transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                className="neo-card w-full max-w-md bg-background flex flex-col gap-5"
+                className="neo-card w-full max-w-md bg-background flex flex-col gap-5 max-h-[90vh] overflow-y-auto"
                 onClick={(e) => e.stopPropagation()}
               >
-                {/* HEADER DU MODAL */}
+                {/* HEADER */}
                 <div className="flex items-center justify-between border-b-4 border-foreground pb-3">
                   <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tighter">
                     Modifier le profil
@@ -341,42 +459,45 @@ export default function ProfilIdPage() {
                   </button>
                 </div>
 
-                {/* APERÇU AVATAR */}
+                {/* AVATAR — cliquable pour modifier */}
                 <div className="flex flex-col items-center gap-3">
-                  <div className="w-24 h-24 rounded-full border-[5px] border-foreground bg-primary overflow-hidden flex items-center justify-center shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]">
-                    {editAvatarUrl ? (
-                      <Image
-                        src={editAvatarUrl}
-                        alt="Aperçu"
-                        width={96}
-                        height={96}
-                        className="object-cover w-full h-full"
-                      />
-                    ) : (
-                      <User strokeWidth={2} className="w-10 h-10 text-foreground" />
-                    )}
+                  <div
+                    className="relative group/avatar-modal cursor-pointer"
+                    onClick={() => avatarInputRef.current?.click()}
+                  >
+                    <div className="w-24 h-24 rounded-full border-[5px] border-foreground bg-primary overflow-hidden flex items-center justify-center shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]">
+                      {isUploadingAvatar ? (
+                        <Loader2 size={28} className="text-foreground animate-spin" />
+                      ) : profile.avatar_url ? (
+                        <Image
+                          src={profile.avatar_url}
+                          alt="Aperçu"
+                          width={96}
+                          height={96}
+                          className="object-cover w-full h-full"
+                        />
+                      ) : (
+                        <User strokeWidth={2} className="w-10 h-10 text-foreground" />
+                      )}
+                    </div>
+                    <div className="absolute inset-0 rounded-full bg-black/0 group-hover/avatar-modal:bg-black/40 transition-all flex items-end justify-center pb-1">
+                      <span className="flex items-center gap-1 text-white text-[9px] font-black uppercase opacity-0 group-hover/avatar-modal:opacity-100 transition-opacity bg-black/60 px-1.5 py-0.5 rounded-full">
+                        <Camera size={10} strokeWidth={3} />
+                        Changer
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1 text-xs font-bold text-foreground/50 uppercase">
-                    <Camera size={14} strokeWidth={3} />
-                    <span>Photo de profil</span>
-                  </div>
-                </div>
-
-                {/* CHAMP URL AVATAR */}
-                <div>
-                  <label className="font-black uppercase text-xs tracking-wider mb-2 block">
-                    URL de la photo
-                  </label>
-                  <div className="relative">
-                    <ImagePlus className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-foreground/50" strokeWidth={3} />
-                    <input
-                      type="url"
-                      placeholder="https://exemple.com/photo.jpg"
-                      className="neo-input font-bold !pl-12 w-full text-sm"
-                      value={editAvatarUrl}
-                      onChange={(e) => setEditAvatarUrl(e.target.value)}
-                    />
-                  </div>
+                  <button
+                    onClick={() => avatarInputRef.current?.click()}
+                    disabled={isUploadingAvatar}
+                    className="flex items-center gap-1.5 text-xs font-black uppercase text-foreground/70 hover:text-foreground transition-colors border-b-2 border-dashed border-foreground/40 hover:border-foreground pb-0.5"
+                  >
+                    <Camera size={13} strokeWidth={3} />
+                    Modifier la photo de profil
+                  </button>
+                  {uploadError && (
+                    <p className="text-red-600 font-bold text-xs text-center border border-red-400 bg-red-50 px-2 py-1">{uploadError}</p>
+                  )}
                 </div>
 
                 {/* CHAMP PRÉNOM */}
@@ -405,6 +526,21 @@ export default function ProfilIdPage() {
                     value={editLastName}
                     onChange={(e) => setEditLastName(e.target.value)}
                   />
+                </div>
+
+                {/* CHAMP BIO */}
+                <div>
+                  <label className="font-black uppercase text-xs tracking-wider mb-2 block">
+                    Bio <span className="text-foreground/40 normal-case font-bold">(affichée en couverture)</span>
+                  </label>
+                  <textarea
+                    placeholder="Ex: Sportif, ambitieux, je repousse mes limites chaque jour…"
+                    className="neo-input font-bold w-full resize-none h-24 !py-3 leading-snug"
+                    value={editBio}
+                    maxLength={120}
+                    onChange={(e) => setEditBio(e.target.value)}
+                  />
+                  <p className="text-xs text-foreground/40 font-bold text-right mt-1">{editBio.length}/120</p>
                 </div>
 
                 {/* ERREUR */}

@@ -26,7 +26,7 @@ async function sendOneSignalNotification(
     headings: { en: title, fr: title },
     contents: { en: body, fr: body },
     url: "https://karisma-productivity.vercel.app/",
-    chrome_web_icon: "https://karisma-productivity.vercel.app/Logo.png",
+    chrome_web_icon: "https://karisma-productivity.vercel.app/icon-192.png",
   };
 
   if (sendAfter) {

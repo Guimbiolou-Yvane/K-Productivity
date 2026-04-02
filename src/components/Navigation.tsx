@@ -16,7 +16,6 @@ import { useTimezoneSync } from "@/hooks/useTimezoneSync";
 
 const navItems = [
   { id: "home", label: "Objectif", icon: Target, href: "/" },
-  { id: "partages", label: "Obj. Commun", icon: Handshake, href: "/partages" },
   { id: "stats", label: "Stats", icon: BarChart2, href: "/stats" },
   { id: "amis", label: "Amis", icon: Users, href: "/amis" },
   { id: "parametres", label: "Paramètres", icon: Settings, href: "/parametres" },

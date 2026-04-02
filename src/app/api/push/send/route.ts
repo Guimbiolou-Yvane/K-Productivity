@@ -39,7 +39,7 @@ export async function POST(req: Request) {
       headings: { en: title, fr: title },
       contents: { en: message, fr: message },
       url: "https://karisma-productivity.vercel.app/",
-      chrome_web_icon: "https://karisma-productivity.vercel.app/Logo.png",
+      chrome_web_icon: "https://karisma-productivity.vercel.app/icon-192.png",
     };
 
     // Si une date d'envoi est spécifiée, programmer la notification

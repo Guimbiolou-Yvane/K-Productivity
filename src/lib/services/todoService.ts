@@ -58,6 +58,24 @@ export const todoService = {
     return true;
   },
 
+  // Update To-Do details
+  async updateTodo(id: string, title: string, time?: string): Promise<boolean> {
+    const updateData: { title: string; time?: string | null } = { title };
+    if (time) {
+      updateData.time = time;
+    } else {
+      updateData.time = null;
+    }
+
+    const { error } = await supabase
+      .from("todos")
+      .update(updateData)
+      .eq("id", id);
+
+    if (error) throw error;
+    return true;
+  },
+
   // Delete a To-Do manually
   async deleteTodo(id: string): Promise<boolean> {
     const { error } = await supabase.from("todos").delete().eq("id", id);

@@ -59,42 +59,59 @@ export async function GET(
         .reverse();
 
       // Calculer la série actuelle
-      const checkDate = new Date();
-      for (const dateStr of uniqueDates) {
-        const expected = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, "0")}-${String(checkDate.getDate()).padStart(2, "0")}`;
-        if (dateStr === expected) {
-          currentStreak++;
-          checkDate.setDate(checkDate.getDate() - 1);
-        } else if (dateStr < expected) {
-          // Vérifier si c'est juste hier qu'on a raté
-          if (currentStreak === 0) {
-            checkDate.setDate(checkDate.getDate() - 1);
-            const yesterday = `${checkDate.getFullYear()}-${String(checkDate.getMonth() + 1).padStart(2, "0")}-${String(checkDate.getDate()).padStart(2, "0")}`;
-            if (dateStr === yesterday) {
-              currentStreak++;
-              checkDate.setDate(checkDate.getDate() - 1);
-            } else {
-              break;
-            }
-          } else {
-            break;
-          }
+      const today = new Date();
+      // On fixe à 12h00 pour éviter tout problème de DST local ou UTC
+      let checkDate = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate(), 12, 0, 0));
+
+      if (uniqueDates.length > 0) {
+        const [fy, fm, fd] = uniqueDates[0].split("-").map(Number);
+        const firstLogDate = new Date(Date.UTC(fy, fm - 1, fd, 12, 0, 0));
+        const diffToServer = Math.round((checkDate.getTime() - firstLogDate.getTime()) / (1000 * 60 * 60 * 24));
+        if (diffToServer < 0) {
+          // L'utilisateur est dans un fuseau horaire en avance par rapport au serveur
+          checkDate = firstLogDate;
         }
       }
 
-      // Calculer la meilleure série
+      for (const dateStr of uniqueDates) {
+        const [y, m, d] = dateStr.split("-").map(Number);
+        const expectedDate = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+        
+        const diff = Math.round((checkDate.getTime() - expectedDate.getTime()) / (1000 * 60 * 60 * 24));
+
+        if (diff === 0) {
+          currentStreak++;
+          checkDate.setUTCDate(checkDate.getUTCDate() - 1);
+        } else if (diff === 1) {
+          // C'est hier (l'utilisateur n'a encore rien validé aujourd'hui)
+          if (currentStreak === 0) {
+            currentStreak++;
+            checkDate.setUTCDate(checkDate.getUTCDate() - 2); // Recule pour vérifier avant-hier au prochain tour
+          } else {
+            break;
+          }
+        } else {
+          break; // Trou dans la série
+        }
+      }
+
+      // Calculer la meilleure série (avec gestion DST robuste)
       let tempStreak = 1;
       const sortedDates = [
         ...new Set(allLogs.map((l: any) => l.completed_date)),
       ].sort();
       for (let i = 1; i < sortedDates.length; i++) {
-        const prev = new Date(sortedDates[i - 1] + "T00:00:00");
-        const curr = new Date(sortedDates[i] + "T00:00:00");
-        const diffDays =
-          (curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24);
+        const [y1, m1, d1] = sortedDates[i - 1].split("-").map(Number);
+        const prev = new Date(Date.UTC(y1, m1 - 1, d1, 12, 0, 0));
+        
+        const [y2, m2, d2] = sortedDates[i].split("-").map(Number);
+        const curr = new Date(Date.UTC(y2, m2 - 1, d2, 12, 0, 0));
+        
+        const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
+        
         if (diffDays === 1) {
           tempStreak++;
-        } else {
+        } else if (diffDays > 1) {
           bestStreak = Math.max(bestStreak, tempStreak);
           tempStreak = 1;
         }
@@ -112,8 +129,6 @@ export async function GET(
       for (const habit of habits) {
         const logs = (habit as any).habit_logs || [];
         const logDates = new Set(logs.map((l: any) => l.completed_date));
-        const habitStart = new Date(habit.start_date + "T00:00:00");
-        const habitEnd = new Date(habit.end_date + "T00:00:00");
 
         // Pour chaque jour du mois jusqu'à aujourd'hui
         const [year, month] = currentMonth.split("-").map(Number);
@@ -122,15 +137,15 @@ export async function GET(
 
         for (let d = 1; d <= Math.min(daysInMonth, todayNum); d++) {
           const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+          // JS Date utilise month (0-11)
           const dateObj = new Date(year, month - 1, d);
           const dayName = DAY_NAMES[dateObj.getDay()];
 
-          // Vérifier si ce jour est dans la fréquence ET entre start_date et end_date
-          if (
-            habit.frequency.includes(dayName) &&
-            dateObj.getTime() >= habitStart.getTime() &&
-            dateObj.getTime() <= habitEnd.getTime()
-          ) {
+          // Vérification robuste en comparant directement les strings ISO "YYYY-MM-DD"
+          const isAfterStart = !habit.start_date || dateStr >= habit.start_date;
+          const isBeforeEnd = !habit.end_date || dateStr <= habit.end_date;
+
+          if (habit.frequency && habit.frequency.includes(dayName) && isAfterStart && isBeforeEnd) {
             expected++;
             if (logDates.has(dateStr)) {
               completed++;

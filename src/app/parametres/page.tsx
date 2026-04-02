@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion } from "motion/react";
-import { User, Mail, Calendar, LogOut, Save, Shield, Pencil, Check, X, Moon, Sun, Monitor, Settings, RotateCcw, Globe } from "lucide-react";
+import { User, Mail, Calendar, LogOut, Save, Shield, Pencil, Check, X, Moon, Sun, Monitor, Settings, RotateCcw, Globe, Camera, Loader2 } from "lucide-react";
 import ResetObjectivesModal from "@/components/ResetObjectivesModal";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -37,6 +37,11 @@ export default function ParametresPage() {
 
   // Réinitialisation des objectifs
   const [showResetModal, setShowResetModal] = useState(false);
+
+  // Avatar
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState("");
 
   // Fuseau horaire
   const [editTimezone, setEditTimezone] = useState("");
@@ -135,6 +140,33 @@ export default function ParametresPage() {
     }
   };
 
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const maxSize = 3 * 1024 * 1024; // 3 MB
+    if (file.size > maxSize) {
+      setAvatarError("La photo ne doit pas dépasser 3 Mo.");
+      return;
+    }
+    if (!file.type.startsWith("image/")) {
+      setAvatarError("Veuillez sélectionner une image valide.");
+      return;
+    }
+    setAvatarError("");
+    setIsUploadingAvatar(true);
+    try {
+      const url = await authService.uploadAvatar(file);
+      setProfile((prev) => prev ? { ...prev, avatar_url: url } : prev);
+      setSaveMessage("Photo de profil mise à jour !");
+      setTimeout(() => setSaveMessage(""), 3000);
+    } catch (err: any) {
+      setAvatarError(err?.message || "Erreur lors de l'upload.");
+    } finally {
+      setIsUploadingAvatar(false);
+      if (avatarInputRef.current) avatarInputRef.current.value = "";
+    }
+  };
+
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString("fr-FR", {
       day: "numeric",
@@ -228,19 +260,44 @@ export default function ParametresPage() {
       {/* SECTION 1 : CARTE PROFIL */}
       <section className="w-full neo-card mb-8">
         <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center sm:gap-8">
-          {/* AVATAR */}
-          <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-full border-[6px] border-foreground bg-primary overflow-hidden flex items-center justify-center shrink-0 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-            {profile.avatar_url ? (
-              <Image
-                src={profile.avatar_url}
-                alt={profile.username}
-                width={144}
-                height={144}
-                className="object-cover w-full h-full"
-              />
-            ) : (
-              <User strokeWidth={2} className="w-12 h-12 sm:w-16 sm:h-16 text-foreground" />
-            )}
+          {/* AVATAR CLIQUABLE */}
+          <div className="relative shrink-0 group/avatar">
+            <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-full border-[6px] border-foreground bg-primary overflow-hidden flex items-center justify-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+              {profile.avatar_url ? (
+                <Image
+                  src={profile.avatar_url}
+                  alt={profile.username}
+                  width={144}
+                  height={144}
+                  className="object-cover w-full h-full"
+                />
+              ) : (
+                <User strokeWidth={2} className="w-12 h-12 sm:w-16 sm:h-16 text-foreground" />
+              )}
+            </div>
+            {/* Overlay bouton modifier */}
+            <button
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={isUploadingAvatar}
+              title="Changer la photo de profil"
+              className="absolute inset-0 rounded-full flex items-end justify-center pb-1.5 bg-black/0 group-hover/avatar:bg-black/40 transition-all cursor-pointer disabled:cursor-wait"
+            >
+              {isUploadingAvatar ? (
+                <Loader2 size={22} className="text-white animate-spin mb-1" />
+              ) : (
+                <span className="flex items-center gap-1 text-white text-[10px] font-black uppercase opacity-0 group-hover/avatar:opacity-100 transition-opacity bg-black/60 px-2 py-0.5 rounded-full">
+                  <Camera size={12} strokeWidth={3} />
+                  Modifier
+                </span>
+              )}
+            </button>
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleAvatarChange}
+            />
           </div>
 
           {/* INFO PRINCIPALE */}
@@ -248,6 +305,9 @@ export default function ParametresPage() {
             <h2 className="text-2xl sm:text-3xl font-black uppercase tracking-tight break-all text-center sm:text-left">
               {profile.username}
             </h2>
+            {avatarError && (
+              <p className="text-red-600 font-bold text-xs border-2 border-red-400 bg-red-50 px-2 py-1">{avatarError}</p>
+            )}
             <div className="flex items-center gap-2 text-muted">
               <Mail size={16} strokeWidth={3} />
               <span className="text-sm font-bold break-all">{profile.email}</span>

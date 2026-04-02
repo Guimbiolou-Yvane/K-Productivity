@@ -81,6 +81,32 @@ export function getTodayIndex(monthDays: MonthDay[]): number {
 }
 
 /**
+ * Récupère les infos d'un jour précis
+ */
+export function getDayInfo(dateStr: string): MonthDay {
+  const d = new Date(dateStr);
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const DAY_NAMES = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
+  return {
+    date: dateStr,
+    dayName: DAY_NAMES[d.getDay()],
+    dayNumber: d.getDate(),
+    isToday: dateStr === todayStr,
+    isFuture: dateStr > todayStr,
+  };
+}
+
+/**
+ * Ajoute (ou soustrait) un nombre de jours à une date (format YYYY-MM-DD)
+ */
+export function addDaysFormat(dateStr: string, amount: number): string {
+  const d = new Date(dateStr);
+  d.setDate(d.getDate() + amount);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
  * Vérifie si une date donnée est en dehors de la plage [start_date, end_date] de l'objectif.
  */
 export function isOutsideDates(habit: UIHabit, dateStr: string): boolean {
