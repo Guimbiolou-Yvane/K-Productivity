@@ -9,7 +9,7 @@ class SharedHabitService {
    * Créer un groupe d'objectifs partagés
    */
   async createGroup(name: string, invitedUserIds: string[]): Promise<SharedGroup> {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getSession().then(res => ({ data: { user: res.data.session?.user || null }, error: res.error }));
     if (!user) throw new Error("Utilisateur non connecté");
 
     // 1. Créer le groupe (sans .select() pour éviter le conflit RLS)
@@ -60,7 +60,7 @@ class SharedHabitService {
    * Récupère tous les groupes d'objectifs partagés de l'utilisateur
    */
   async fetchUserGroups(): Promise<{group: SharedGroup, members: UserProfile[]}[]> {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getSession().then(res => ({ data: { user: res.data.session?.user || null }, error: res.error }));
     if (!user) return [];
 
     // Récupérer les identifiants de groupes de l'utilisateur
@@ -127,7 +127,7 @@ class SharedHabitService {
    * Récupère toutes les habitudes partagées d'un groupe spécifique
    */
   async fetchHabitsByGroup(groupId: string): Promise<UISharedHabit[]> {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getSession().then(res => ({ data: { user: res.data.session?.user || null }, error: res.error }));
     if (!user) return [];
 
     // Récupérer le groupe
@@ -214,7 +214,7 @@ class SharedHabitService {
     endDate: string,
     time: string | undefined,
   ) {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getSession().then(res => ({ data: { user: res.data.session?.user || null }, error: res.error }));
     if (!user) throw new Error("Non connecté");
 
     const target_month = startDate.substring(0, 7);
@@ -261,7 +261,7 @@ class SharedHabitService {
    * Quitter un groupe (la BDD nettoiera le groupe s'il reste < 2 membres grâce au trigger)
    */
   async leaveGroup(groupId: string) {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getSession().then(res => ({ data: { user: res.data.session?.user || null }, error: res.error }));
     if (!user) throw new Error("Utilisateur non connecté");
 
     const { error } = await supabase.from("shared_group_members").delete().eq("group_id", groupId).eq("user_id", user.id);
@@ -272,7 +272,7 @@ class SharedHabitService {
    * Modifier le nom et la liste des membres d'un groupe
    */
   async updateGroup(groupId: string, name: string, userIds: string[]) {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getSession().then(res => ({ data: { user: res.data.session?.user || null }, error: res.error }));
     if (!user) throw new Error("Utilisateur non connecté");
 
     // 1. MAJ du nom
@@ -313,7 +313,7 @@ class SharedHabitService {
     time: string | undefined,
   ) {
     const target_month = startDate.substring(0, 7);
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("shared_habits")
       .update({
         name,
@@ -326,16 +326,20 @@ class SharedHabitService {
         end_date: endDate,
         target_month,
       })
-      .eq("id", habitId);
+      .eq("id", habitId)
+      .select();
 
     if (error) throw error;
+    if (!data || data.length === 0) {
+      throw new Error("Mise à jour refusée : vérifiez vos permissions sur cet objectif.");
+    }
   }
 
   /**
    * Valider ou Invalider (Toggle) un objectif partagé pour l'utilisateur courant
    */
   async toggleLog(sharedHabitId: string, customDate: string) {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getSession().then(res => ({ data: { user: res.data.session?.user || null }, error: res.error }));
     if (!user) throw new Error("Utilisateur non connecté");
 
     // Voir s'il y a déjà un log
@@ -392,7 +396,7 @@ class SharedHabitService {
    * Réinitialiser tous les objectifs communs (supprime les logs partagés et quitte tous les groupes)
    */
   async resetAllSharedHabits(): Promise<void> {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getSession().then(res => ({ data: { user: res.data.session?.user || null }, error: res.error }));
     if (!user) throw new Error("Utilisateur non connecté");
 
     // 1. Supprimer tous les logs d'objectifs partagés de l'utilisateur

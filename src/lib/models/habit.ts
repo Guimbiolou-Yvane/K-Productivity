@@ -23,6 +23,7 @@ export interface Habit {
   target_month: string; // Mois cible sous format "YYYY-MM"
   start_date: string; // Date de début ("YYYY-MM-DD")
   end_date: string; // Date de fin ("YYYY-MM-DD")
+  linked_goal_id?: string; // Clé étrangère vers goals.id
   created_at: string; // Date de création
 }
 

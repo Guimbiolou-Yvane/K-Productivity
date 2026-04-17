@@ -158,5 +158,3 @@ Tu peux enrichir avec :
 - Une slide = un bloc `## Slide:`
 
 ---
-
-## ✅ Résultat attendu

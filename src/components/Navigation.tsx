@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Target, BarChart2, Users, User, Settings, Handshake, Bell, BellOff, BellRing } from "lucide-react";
+import { Target, BarChart2, Users, User, Settings, Handshake, Bell, BellOff, BellRing, MessageSquare } from "lucide-react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { motion, AnimatePresence } from "motion/react";
@@ -11,6 +11,7 @@ import { UserProfile } from "@/lib/models/user";
 import { requestNotificationPermission, getNotificationPermission } from "@/components/OneSignalProvider";
 import NotificationSidebar from "@/components/NotificationSidebar";
 import { notificationService } from "@/lib/services/notificationService";
+import { chatService } from "@/lib/services/chatService";
 import { supabase } from "@/lib/supabase/client";
 import { useTimezoneSync } from "@/hooks/useTimezoneSync";
 
@@ -18,6 +19,7 @@ const navItems = [
   { id: "home", label: "Objectif", icon: Target, href: "/" },
   { id: "stats", label: "Stats", icon: BarChart2, href: "/stats" },
   { id: "amis", label: "Amis", icon: Users, href: "/amis" },
+  { id: "messages", label: "Messages", icon: MessageSquare, href: "/messages" },
   { id: "parametres", label: "Paramètres", icon: Settings, href: "/parametres" },
 ];
 
@@ -30,6 +32,7 @@ export default function Navigation() {
   const [notifLoading, setNotifLoading] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadMsgCount, setUnreadMsgCount] = useState(0);
   const [isHeaderVisible, setIsHeaderVisible] = useState(true);
   const lastScrollY = React.useRef(0);
 
@@ -46,43 +49,40 @@ export default function Navigation() {
         const userProfile = await authService.getProfile();
         setProfile(userProfile);
 
-        if (perm === "granted" && userProfile) {
-          notificationService.getUnreadCount().then(setUnreadCount).catch(() => {});
+          if (perm === "granted" && userProfile) {
+            notificationService.getUnreadCount().then(setUnreadCount).catch(() => {});
+          }
+          
+          if (userProfile) {
+            chatService.getUnreadMessagesCount().then(setUnreadMsgCount).catch(() => {});
+          }
 
-          // Souscription Realtime persistante pour le badge
-          const channel = supabase
-            .channel("nav-notif-realtime-" + userProfile.id)
-            .on(
-              "postgres_changes",
-              {
-                event: "INSERT",
-                schema: "public",
-                table: "notifications",
-                filter: `user_id=eq.${userProfile.id}`,
-              },
-              () => {
-                setUnreadCount((c) => c + 1);
-                if (typeof navigator !== "undefined" && navigator.vibrate) {
-                  navigator.vibrate([50, 30, 50]);
+          // Souscription Realtime persistante pour les notifications et les messages
+          if (userProfile) {
+            const channel = supabase
+              .channel("nav-notif-realtime-" + userProfile.id)
+              .on(
+                "postgres_changes",
+                { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${userProfile.id}` },
+                () => {
+                  setUnreadCount((c) => c + 1);
+                  if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate([50, 30, 50]);
                 }
-              }
-            )
-            .on(
-              "postgres_changes",
-              {
-                event: "UPDATE",
-                schema: "public",
-                table: "notifications",
-                filter: `user_id=eq.${userProfile.id}`,
-              },
-              () => {
-                notificationService.getUnreadCount().then(setUnreadCount).catch(() => {});
-              }
-            )
-            .subscribe();
+              )
+              .on(
+                "postgres_changes",
+                { event: "UPDATE", schema: "public", table: "notifications", filter: `user_id=eq.${userProfile.id}` },
+                () => { notificationService.getUnreadCount().then(setUnreadCount).catch(() => {}); }
+              )
+              .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "messages", filter: `receiver_id=eq.${userProfile.id}` },
+                () => { chatService.getUnreadMessagesCount().then(setUnreadMsgCount).catch(() => {}); }
+              )
+              .subscribe();
 
-          return () => { supabase.removeChannel(channel); };
-        }
+            return () => { supabase.removeChannel(channel); };
+          }
       } catch (err) {
         console.error("Could not fetch user profile", err);
       }
@@ -160,7 +160,7 @@ export default function Navigation() {
         className="hidden md:flex fixed top-0 left-0 right-0 z-50 w-full items-center justify-between p-4 md:px-8 border-b-4 border-foreground bg-surface"
       >
         <Link href="/" className="relative h-16 w-64 md:h-20 md:w-80">
-          <Image src="/Logo.png" alt="Karisma Productivity" fill className="object-contain object-left" priority />
+          <Image src="/Logo.png" alt="Karisma Productivity" fill className="object-contain object-left" priority unoptimized />
         </Link>
 
         <div className="flex items-center gap-6">
@@ -171,12 +171,17 @@ export default function Navigation() {
                 <Link key={`desktop-${item.id}`} href={item.href}>
                   <motion.div
                     layout
-                    className={`flex items-center justify-center px-5 py-3 rounded-full border-4 transition-colors ${
+                    className={`flex items-center justify-center px-5 py-3 rounded-full border-4 transition-colors relative ${
                       isActive ? "bg-primary border-foreground shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]" : "border-transparent text-foreground/60 hover:text-foreground hover:bg-black/5"
                     }`}
                   >
-                    <motion.div layout>
+                    <motion.div layout className="relative">
                       <item.icon className="w-6 h-6 shrink-0" strokeWidth={isActive ? 3 : 2} />
+                      {item.id === "messages" && unreadMsgCount > 0 && (
+                        <span className="absolute -top-2 -right-2 min-w-[18px] h-[18px] bg-red-500 border-2 border-surface rounded-full text-white text-[9px] font-black flex items-center justify-center px-0.5">
+                          {unreadMsgCount > 9 ? "9+" : unreadMsgCount}
+                        </span>
+                      )}
                     </motion.div>
                     <AnimatePresence>
                       {isActive && (
@@ -235,7 +240,7 @@ export default function Navigation() {
               </div>
               <div className="w-12 h-12 rounded-full border-4 border-foreground bg-primary overflow-hidden flex items-center justify-center shrink-0 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                 {profile.avatar_url ? (
-                  <Image src={profile.avatar_url} alt={profile.username} width={48} height={48} className="object-cover w-full h-full" />
+                  <Image src={profile.avatar_url} alt={profile.username} width={48} height={48} className="object-cover w-full h-full" unoptimized />
                 ) : (
                   <User strokeWidth={3} className="w-6 h-6" />
                 )}
@@ -246,9 +251,9 @@ export default function Navigation() {
       </motion.header>
 
       {/* HEADER MOBILE */}
-      <header className="md:hidden w-full flex items-center justify-between p-4 border-b-4 border-foreground bg-surface">
+      <header id="mobile-header" className="md:hidden w-full flex items-center justify-between p-4 border-b-4 border-foreground bg-surface">
         <Link href="/" className="relative h-12 w-40 shrink-0">
-          <Image src="/Logo.png" alt="Karisma Productivity" fill className="object-contain object-left" priority />
+          <Image src="/Logo.png" alt="Karisma Productivity" fill className="object-contain object-left" priority unoptimized />
         </Link>
 
         <div className="flex items-center gap-3">
@@ -289,7 +294,7 @@ export default function Navigation() {
               </span>
               <div className="w-10 h-10 rounded-full border-[3px] border-foreground bg-primary overflow-hidden flex items-center justify-center shrink-0 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] active:translate-x-[2px] active:translate-y-[2px] active:shadow-none transition-all">
                 {profile.avatar_url ? (
-                  <Image src={profile.avatar_url} alt={profile.username} width={40} height={40} className="object-cover w-full h-full" />
+                  <Image src={profile.avatar_url} alt={profile.username} width={40} height={40} className="object-cover w-full h-full" unoptimized />
                 ) : (
                   <User strokeWidth={3} className="w-5 h-5" />
                 )}
@@ -300,7 +305,7 @@ export default function Navigation() {
       </header>
 
       {/* MOBILE BOTTOM NAV */}
-      <div className="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+      <div id="mobile-bottom-nav" className="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
         <nav className="flex items-center bg-surface border-4 border-foreground shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] rounded-full p-2 gap-1 relative overflow-hidden">
           {navItems.map((item) => {
             const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
@@ -308,11 +313,18 @@ export default function Navigation() {
               <Link key={`mobile-${item.id}`} href={item.href}>
                 <motion.div
                   whileTap={{ scale: 0.9 }}
-                  className={`flex items-center justify-center p-3 rounded-full border-4 transition-colors ${
+                  className={`flex items-center justify-center p-3 rounded-full border-4 transition-colors relative ${
                     isActive ? "bg-primary border-foreground shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]" : "border-transparent text-foreground/60"
                   }`}
                 >
-                  <item.icon className={`w-6 h-6 shrink-0 ${isActive ? "text-foreground" : "text-foreground/80"}`} strokeWidth={isActive ? 3 : 2} />
+                  <div className="relative">
+                    <item.icon className={`w-6 h-6 shrink-0 ${isActive ? "text-foreground" : "text-foreground/80"}`} strokeWidth={isActive ? 3 : 2} />
+                    {item.id === "messages" && unreadMsgCount > 0 && (
+                      <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-[16px] bg-red-500 border-2 border-surface rounded-full text-white text-[9px] font-black flex items-center justify-center px-0.5 z-10">
+                        {unreadMsgCount > 9 ? "9+" : unreadMsgCount}
+                      </span>
+                    )}
+                  </div>
                 </motion.div>
               </Link>
             );

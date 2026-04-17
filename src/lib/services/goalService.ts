@@ -5,7 +5,7 @@ export const goalService = {
   async fetchGoals(userId?: string): Promise<Goal[]> {
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await supabase.auth.getSession().then(res => ({ data: { user: res.data.session?.user || null }, error: res.error }));
     if (!user && !userId) return [];
 
     const targetUserId = userId || user?.id;
@@ -33,7 +33,7 @@ export const goalService = {
   ): Promise<Goal> {
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await supabase.auth.getSession().then(res => ({ data: { user: res.data.session?.user || null }, error: res.error }));
     if (!user) throw new Error("User not authenticated");
 
     const { data, error } = await supabase

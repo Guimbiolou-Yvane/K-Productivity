@@ -11,6 +11,8 @@ import {
   GOAL_COLORS,
 } from "@/lib/models/goal";
 import { goalService } from "@/lib/services/goalService";
+import { habitService } from "@/lib/services/habitService";
+import { UIHabit } from "@/lib/models/habit";
 import {
   Plus,
   Trash2,
@@ -41,6 +43,7 @@ export default function GoalList({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [goalToEdit, setGoalToEdit] = useState<Goal | null>(null);
   const [categoryFilter, setCategoryFilter] = useState<GoalCategory | "TOUS">("TOUS");
+  const [allHabits, setAllHabits] = useState<UIHabit[]>([]);
   const [isCollapsed, setIsCollapsed] = useState(true);
 
   // Persistence du state isCollapsed
@@ -78,8 +81,12 @@ export default function GoalList({
   const loadGoals = async () => {
     try {
       setIsLoading(true);
-      const data = await goalService.fetchGoals(profileUserId);
+      const [data, habs] = await Promise.all([
+        goalService.fetchGoals(profileUserId),
+        habitService.fetchHabits(profileUserId)
+      ]);
       setGoals(data);
+      setAllHabits(habs);
     } catch (error) {
       console.error("Erreur de chargement des objectifs :", error);
     } finally {
@@ -136,6 +143,38 @@ export default function GoalList({
   // Calcul progression
   const getProgress = (goal: Goal) => {
     if (goal.is_completed) return 100;
+
+    const linkedHabits = allHabits.filter((h) => h.linked_goal_id === goal.id);
+    
+    if (linkedHabits.length > 0) {
+      let totalExpected = 0;
+      let totalCompleted = 0;
+      const DAYS_MAP = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
+
+      for (const h of linkedHabits) {
+        totalCompleted += Object.keys(h.completedLogs).length;
+        
+        let start = new Date(h.start_date);
+        let end = new Date(h.end_date);
+        
+        // Empêcher d'aller au-delà de la date cible
+        const limitDate = new Date(goal.target_date);
+        if (end > limitDate) end = limitDate;
+
+        let expectedForThisHabit = 0;
+        if (h.frequency && h.frequency.length > 0) {
+          for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            const dayStr = DAYS_MAP[d.getDay()];
+            if (h.frequency.includes(dayStr)) expectedForThisHabit++;
+          }
+        }
+        totalExpected += expectedForThisHabit;
+      }
+
+      if (totalExpected === 0) return 0;
+      return Math.min(100, Math.round((totalCompleted / totalExpected) * 100));
+    }
+
     const start = new Date(goal.start_date).getTime();
     const end = new Date(goal.target_date).getTime();
     const now = Date.now();

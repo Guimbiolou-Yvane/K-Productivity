@@ -8,6 +8,7 @@ export interface UserProfile {
   bio?: string;         // Biographie (affichée en couverture)
   profile_widgets?: string[]; // Widgets affichés sur le profil
   timezone?: string; // Fuseau horaire IANA (ex: "Europe/Paris", "Africa/Douala")
+  telegram_chat_id?: string; // ID pour le bot Telegram
 
   // === STATISTIQUES GLOBALES ===
   longest_streak: number; // Record absolu (Stocké ici pour accès rapide)

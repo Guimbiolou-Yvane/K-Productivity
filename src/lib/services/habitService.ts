@@ -9,53 +9,58 @@ import {
   OverallCompletionStats,
 } from "@/lib/models/habit";
 import { supabase } from "@/lib/supabase/client";
+import { offlineCache } from "@/lib/offlineCache";
 
 export const habitService = {
   // Récupère les habitudes de l'utilisateur connecté + leurs logs
   async fetchHabits(userId?: string): Promise<UIHabit[]> {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user && !userId) return [];
-    const targetUserId = userId || user?.id;
+    const cacheKey = `habits_${userId || "me"}`;
+    return offlineCache.withFallback(cacheKey, async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user && !userId) return [];
+      const targetUserId = userId || user?.id;
 
-    const now = new Date();
-    const targetMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const now = new Date();
+      const targetMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
-    // Récupérer les habitudes avec leurs logs (sans filtrer par target_month)
-    const { data: habits, error } = await supabase
-      .from("habits")
-      .select("*, habit_logs(completed_date)")
-      .eq("user_id", targetUserId)
-      .order("created_at", { ascending: true });
+      // Récupérer les habitudes avec leurs logs (sans filtrer par target_month)
+      const { data: habits, error } = await supabase
+        .from("habits")
+        .select("*, habit_logs(completed_date)")
+        .eq("user_id", targetUserId)
+        .order("created_at", { ascending: true });
 
-    if (error) throw error;
-    if (!habits) return [];
+      if (error) throw error;
+      if (!habits) return [];
 
-    // Transformer en UIHabit : les logs sont indexés par DATE réelle ("2026-03-08": true)
-    return habits.map((habit: any) => {
-      const completedLogs: Record<string, boolean> = {};
+      // Transformer en UIHabit : les logs sont indexés par DATE réelle ("2026-03-08": true)
+      return habits.map((habit: any) => {
+        const completedLogs: Record<string, boolean> = {};
 
-      if (habit.habit_logs) {
-        habit.habit_logs.forEach((log: any) => {
-          completedLogs[log.completed_date] = true;
-        });
-      }
+        if (habit.habit_logs) {
+          habit.habit_logs.forEach((log: any) => {
+            completedLogs[log.completed_date] = true;
+          });
+        }
 
-      return {
-        id: habit.id,
-        name: habit.name,
-        category: habit.category as HabitCategory,
-        frequency: habit.frequency || [],
-        color: habit.color,
-        icon: habit.icon,
-        time: habit.time,
-        target_month: habit.target_month,
-        start_date: habit.start_date,
-        end_date: habit.end_date,
-        created_at: habit.created_at,
-        completedLogs,
-      };
+        return {
+          id: habit.id,
+          name: habit.name,
+          category: habit.category as HabitCategory,
+          frequency: habit.frequency || [],
+          color: habit.color,
+          icon: habit.icon,
+          time: habit.time,
+          target_month: habit.target_month,
+          start_date: habit.start_date,
+          end_date: habit.end_date,
+          linked_goal_id: habit.linked_goal_id,
+          created_at: habit.created_at,
+          completedLogs,
+        };
+      });
     });
   },
 
@@ -69,6 +74,7 @@ export const habitService = {
     startDate: string,
     endDate: string,
     time?: string,
+    linked_goal_id?: string
   ): Promise<UIHabit> {
     const {
       data: { user },
@@ -91,6 +97,7 @@ export const habitService = {
         target_month: targetMonth,
         start_date: startDate,
         end_date: endDate,
+        linked_goal_id: linked_goal_id || null,
       })
       .select()
       .single();
@@ -189,6 +196,7 @@ export const habitService = {
       target_month: data.target_month,
       start_date: data.start_date,
       end_date: data.end_date,
+      linked_goal_id: data.linked_goal_id,
       created_at: data.created_at,
       completedLogs: {},
     };
@@ -243,6 +251,7 @@ export const habitService = {
     startDate: string,
     endDate: string,
     time?: string,
+    linked_goal_id?: string
   ): Promise<UIHabit> {
     const { data, error } = await supabase
       .from("habits")
@@ -255,6 +264,7 @@ export const habitService = {
         start_date: startDate,
         end_date: endDate,
         time: time || null,
+        linked_goal_id: linked_goal_id || null,
       })
       .eq("id", habitId)
       .select()
@@ -273,6 +283,7 @@ export const habitService = {
       target_month: data.target_month,
       start_date: data.start_date,
       end_date: data.end_date,
+      linked_goal_id: data.linked_goal_id,
       created_at: data.created_at,
       completedLogs: {},
     };
@@ -365,43 +376,41 @@ export const habitService = {
     if (!user && !userId) return { current: 0, best: 0 };
     const targetUserId = userId || user?.id;
 
-    const { currentStreak, streakDates } = await this._evaluateStreak(targetUserId as string);
+    const cacheKey = `streak_${targetUserId}`;
+    return offlineCache.withFallback(cacheKey, async () => {
+      const { currentStreak } = await this._evaluateStreak(targetUserId as string);
 
-    // Calculer le meilleur streak sur TOUT l'historique des logs
-    const { data: allLogs } = await supabase
-      .from("habit_logs")
-      .select("completed_date")
-      .eq("user_id", targetUserId)
-      .order("completed_date", { ascending: true });
+      const { data: allLogs } = await supabase
+        .from("habit_logs")
+        .select("completed_date")
+        .eq("user_id", targetUserId)
+        .order("completed_date", { ascending: true });
 
-    let bestStreak = currentStreak;
+      let bestStreak = currentStreak;
 
-    if (allLogs && allLogs.length > 0) {
-      // Obtenir les dates uniques triées
-      const uniqueDates = [...new Set(allLogs.map((l: any) => l.completed_date))].sort();
-      let tempStreak = 1;
+      if (allLogs && allLogs.length > 0) {
+        const uniqueDates = [...new Set(allLogs.map((l: any) => l.completed_date))].sort();
+        let tempStreak = 1;
 
-      for (let i = 1; i < uniqueDates.length; i++) {
-        const [y1, m1, d1] = uniqueDates[i - 1].split("-").map(Number);
-        const [y2, m2, d2] = uniqueDates[i].split("-").map(Number);
-        const prev = new Date(Date.UTC(y1, m1 - 1, d1, 12, 0, 0));
-        const curr = new Date(Date.UTC(y2, m2 - 1, d2, 12, 0, 0));
-        const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
+        for (let i = 1; i < uniqueDates.length; i++) {
+          const [y1, m1, d1] = uniqueDates[i - 1].split("-").map(Number);
+          const [y2, m2, d2] = uniqueDates[i].split("-").map(Number);
+          const prev = new Date(Date.UTC(y1, m1 - 1, d1, 12, 0, 0));
+          const curr = new Date(Date.UTC(y2, m2 - 1, d2, 12, 0, 0));
+          const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
 
-        if (diffDays === 1) {
-          tempStreak++;
-        } else if (diffDays > 1) {
-          bestStreak = Math.max(bestStreak, tempStreak);
-          tempStreak = 1;
+          if (diffDays === 1) {
+            tempStreak++;
+          } else if (diffDays > 1) {
+            bestStreak = Math.max(bestStreak, tempStreak);
+            tempStreak = 1;
+          }
         }
+        bestStreak = Math.max(bestStreak, tempStreak);
       }
-      bestStreak = Math.max(bestStreak, tempStreak);
-    }
 
-    return {
-      current: currentStreak,
-      best: bestStreak,
-    };
+      return { current: currentStreak, best: bestStreak };
+    }, 60 * 60 * 1000); // 1h de cache pour les streaks (changent fréquemment)
   },
 
   // Agréger UNIQUEMENT les jours composants la série actuelle
@@ -461,13 +470,13 @@ export const habitService = {
     const targetUserId = userId || user?.id;
 
     const year = targetDate.getFullYear();
-    const month = targetDate.getMonth(); // 0-indexed
+    const month = targetDate.getMonth();
     const startDate = `${year}-${String(month + 1).padStart(2, "0")}-01`;
     const endDate = `${year}-${String(month + 1).padStart(2, "0")}-${new Date(year, month + 1, 0).getDate()}`;
-
     const targetMonth = `${year}-${String(month + 1).padStart(2, "0")}`;
 
-    // Récupérer toutes les habitudes actives sur ce mois (pas seulement celles créées ce mois-ci)
+    const cacheKey = `monthly_stats_${targetUserId}_${targetMonth}`;
+    return offlineCache.withFallback(cacheKey, async () => {
     // Une habitude est "active" sur le mois si son start_date <= fin du mois ET end_date >= début du mois
     const { data: habits } = await supabase
       .from("habits")
@@ -566,19 +575,20 @@ export const habitService = {
       }
     }
 
-    return {
-      allCompletions,
-      habits: [
-        {
-          id: "all",
-          name: "Tous les objectifs (Général)",
-          completions: allCompletions,
-          failed: allFailed,
-          notApplicable: allNotApplicable,
-        },
-        ...habitStats,
-      ],
-    };
+      return {
+        allCompletions,
+        habits: [
+          {
+            id: "all",
+            name: "Tous les objectifs (Général)",
+            completions: allCompletions,
+            failed: allFailed,
+            notApplicable: allNotApplicable,
+          },
+          ...habitStats,
+        ],
+      };
+    }); // offlineCache.withFallback
   },
 
   // Taux de réussite avec filtre jour/semaine/mois
@@ -595,6 +605,10 @@ export const habitService = {
     const DAYS_MAP = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const todayDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+    const cacheKey = `success_rate_${targetUserId}_${filter}_${todayDateStr}`;
+    return offlineCache.withFallback(cacheKey, async () => {
 
     let startDate: Date;
     if (filter === "day") {
@@ -762,6 +776,7 @@ export const habitService = {
       });
     }
     return result;
+    }); // offlineCache.withFallback
   },
 
   // Statistiques globales de complétion avec filtre (semaine, mois, ou depuis le début)
@@ -779,88 +794,87 @@ export const habitService = {
     const now = new Date();
     const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
-    const DAYS_MAP: Record<number, string> = {
-      0: "Dim",
-      1: "Lun",
-      2: "Mar",
-      3: "Mer",
-      4: "Jeu",
-      5: "Ven",
-      6: "Sam",
-    };
+    const cacheKey = `completion_stats_${targetUserId}_${filter}_${todayStr}`;
+    return offlineCache.withFallback(cacheKey, async () => {
+      const DAYS_MAP: Record<number, string> = {
+        0: "Dim",
+        1: "Lun",
+        2: "Mar",
+        3: "Mer",
+        4: "Jeu",
+        5: "Ven",
+        6: "Sam",
+      };
 
-    // === Déterminer la plage de dates selon le filtre ===
-    let rangeStart: string;
+      // === Déterminer la plage de dates selon le filtre ===
+      let rangeStart: string;
 
-    if (filter === "week") {
-      // Lundi de la semaine courante
-      const monday = new Date(now);
-      const dayOfWeek = monday.getDay();
-      const offsetToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-      monday.setDate(monday.getDate() - offsetToMonday);
-      rangeStart = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, "0")}-${String(monday.getDate()).padStart(2, "0")}`;
-    } else if (filter === "month") {
-      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-      rangeStart = `${currentMonth}-01`;
-    } else {
-      // "all" — depuis le tout début (on prend 2020-01-01 comme date minimale)
-      rangeStart = "2020-01-01";
-    }
+      if (filter === "week") {
+        // Lundi de la semaine courante
+        const monday = new Date(now);
+        const dayOfWeek = monday.getDay();
+        const offsetToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        monday.setDate(monday.getDate() - offsetToMonday);
+        rangeStart = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, "0")}-${String(monday.getDate()).padStart(2, "0")}`;
+      } else if (filter === "month") {
+        const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+        rangeStart = `${currentMonth}-01`;
+      } else {
+        // "all" — depuis le tout début
+        rangeStart = "2020-01-01";
+      }
 
-    // Récupérer les habitudes actives sur la plage (overlap entre start_date..end_date et rangeStart..today)
-    // On ne filtre plus par target_month car une habitude créée le mois dernier peut encore être valide aujourd'hui
-    let habitsQuery = supabase
-      .from("habits")
-      .select("id, frequency, start_date, end_date")
-      .eq("user_id", targetUserId)
-      .lte("start_date", todayStr)
-      .gte("end_date", rangeStart);
+      // Récupérer les habitudes actives sur la plage
+      const { data: habits } = await supabase
+        .from("habits")
+        .select("id, frequency, start_date, end_date")
+        .eq("user_id", targetUserId)
+        .lte("start_date", todayStr)
+        .gte("end_date", rangeStart);
 
-    const { data: habits } = await habitsQuery;
-    if (!habits || habits.length === 0)
-      return { completed: 0, expected: 0, missed: 0, rate: 0 };
+      if (!habits || habits.length === 0)
+        return { completed: 0, expected: 0, missed: 0, rate: 0 };
 
-    // === Récupérer les logs dans la plage ===
-    const { data: logs } = await supabase
-      .from("habit_logs")
-      .select("habit_id, completed_date")
-      .eq("user_id", targetUserId)
-      .gte("completed_date", rangeStart)
-      .lte("completed_date", todayStr);
+      // === Récupérer les logs dans la plage ===
+      const { data: logs } = await supabase
+        .from("habit_logs")
+        .select("habit_id, completed_date")
+        .eq("user_id", targetUserId)
+        .gte("completed_date", rangeStart)
+        .lte("completed_date", todayStr);
 
-    const completed = logs?.length || 0;
+      const completed = logs?.length || 0;
 
-    // === Calculer le nombre d'objectifs attendus ===
-    let expected = 0;
+      // === Calculer le nombre d'objectifs attendus ===
+      let expected = 0;
 
-    for (const habit of habits) {
-      const freq: string[] = habit.frequency || [];
-      if (freq.length === 0) continue;
+      for (const habit of habits) {
+        const freq: string[] = habit.frequency || [];
+        if (freq.length === 0) continue;
 
-      // Début et fin par simple vérification de chaînes
-      const startDateStr = habit.start_date && habit.start_date > rangeStart ? habit.start_date : rangeStart;
-      const endDateStr = habit.end_date && habit.end_date < todayStr ? habit.end_date : todayStr;
+        const startDateStr = habit.start_date && habit.start_date > rangeStart ? habit.start_date : rangeStart;
+        const endDateStr = habit.end_date && habit.end_date < todayStr ? habit.end_date : todayStr;
 
-      if (startDateStr > endDateStr) continue;
+        if (startDateStr > endDateStr) continue;
 
-      const [sy, sm, sd] = startDateStr.split("-").map(Number);
-      const [ey, em, ed] = endDateStr.split("-").map(Number);
-      
-      const startDateObj = new Date(sy, sm - 1, sd);
-      const endDateObj = new Date(ey, em - 1, ed);
+        const [sy, sm, sd] = startDateStr.split("-").map(Number);
+        const [ey, em, ed] = endDateStr.split("-").map(Number);
+        const startDateObj = new Date(sy, sm - 1, sd);
+        const endDateObj = new Date(ey, em - 1, ed);
 
-      for (let d = new Date(startDateObj); d <= endDateObj; d.setDate(d.getDate() + 1)) {
-        const dayOfWeekStr = DAYS_MAP[d.getDay()];
-        if (freq.includes(dayOfWeekStr)) {
-          expected++;
+        for (let d = new Date(startDateObj); d <= endDateObj; d.setDate(d.getDate() + 1)) {
+          const dayOfWeekStr = DAYS_MAP[d.getDay()];
+          if (freq.includes(dayOfWeekStr)) {
+            expected++;
+          }
         }
       }
-    }
 
-    const missed = Math.max(0, expected - completed);
-    const rate = expected > 0 ? Math.round((completed / expected) * 100) : 0;
+      const missed = Math.max(0, expected - completed);
+      const rate = expected > 0 ? Math.round((completed / expected) * 100) : 0;
 
-    return { completed, expected, missed, rate: Math.min(rate, 100) };
+      return { completed, expected, missed, rate: Math.min(rate, 100) };
+    }); // offlineCache.withFallback
   },
 
   // Réinitialiser tous les objectifs personnels (supprime les logs puis les habitudes)

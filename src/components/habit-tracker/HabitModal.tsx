@@ -15,6 +15,7 @@ export interface HabitFormData {
   time?: string;
   startDate: string;
   endDate: string;
+  linked_goal_id?: string;
 }
 
 interface HabitModalProps {
@@ -33,6 +34,21 @@ export default function HabitModal({ isOpen, onClose, habitToEdit, onSave, onDel
   const [icon, setIcon] = useState(PRESET_ICONS[0]);
   const [time, setTime] = useState("");
   const [isTimeEnabled, setIsTimeEnabled] = useState(false);
+  const [linkedGoalId, setLinkedGoalId] = useState("");
+  const [goals, setGoals] = useState<{id: string, title: string, icon: string}[]>([]);
+  
+  // Fetch goals
+  useEffect(() => {
+    if (isOpen) {
+      import("@/lib/supabase/client").then(async ({ supabase }) => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data } = await supabase.from('goals').select('id, title, icon').eq('user_id', user.id);
+          if (data) setGoals(data);
+        }
+      });
+    }
+  }, [isOpen]);
   
   // Date et durée
   const todayStr = new Date().toISOString().split("T")[0];
@@ -55,6 +71,7 @@ export default function HabitModal({ isOpen, onClose, habitToEdit, onSave, onDel
         setIcon(habitToEdit.icon || PRESET_ICONS[0]);
         setTime(habitToEdit.time || "");
         setIsTimeEnabled(!!habitToEdit.time);
+        setLinkedGoalId(habitToEdit.linked_goal_id || "");
         setStartDate(habitToEdit.start_date || todayStr);
         
         // Calcul de la durée en semaines entre start_date et end_date
@@ -79,6 +96,7 @@ export default function HabitModal({ isOpen, onClose, habitToEdit, onSave, onDel
         setIcon(PRESET_ICONS[0]);
         setTime("");
         setIsTimeEnabled(false);
+        setLinkedGoalId("");
         setStartDate(todayStr);
         setDurationWeeks(1);
         const endObj = new Date(todayStr);
@@ -101,6 +119,7 @@ export default function HabitModal({ isOpen, onClose, habitToEdit, onSave, onDel
       time: isTimeEnabled && time ? time : undefined,
       startDate,
       endDate,
+      linked_goal_id: linkedGoalId || undefined,
     });
   };
 
@@ -246,6 +265,27 @@ export default function HabitModal({ isOpen, onClose, habitToEdit, onSave, onDel
                 </div>
               </div>
             </div>
+            
+            {/* OBJECTIF LONG TERME LIÉ (Optionnel) */}
+            {goals.length > 0 && (
+              <div className="flex flex-col gap-2">
+                <label className="font-bold uppercase tracking-wider text-sm flex items-center justify-between">
+                  <span>Lier à un grand objectif</span>
+                  <span className="text-[10px] text-foreground/50 border border-foreground/30 px-1 rounded">Optionnel</span>
+                </label>
+                <select 
+                  value={linkedGoalId}
+                  onChange={(e) => setLinkedGoalId(e.target.value)}
+                  className="neo-input font-bold cursor-pointer appearance-none bg-surface"
+                  style={{ backgroundImage: 'linear-gradient(45deg, transparent 50%, black 50%), linear-gradient(135deg, black 50%, transparent 50%)', backgroundPosition: 'calc(100% - 20px) calc(1em + 2px), calc(100% - 15px) calc(1em + 2px)', backgroundSize: '5px 5px, 5px 5px', backgroundRepeat: 'no-repeat' }}
+                >
+                  <option value="">-- Aucun objectif --</option>
+                  {goals.map(g => (
+                    <option key={g.id} value={g.id}>{g.icon} {g.title}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             
             {/* DATE DE DÉBUT ET DURÉE */}
             <div className="flex flex-col gap-4">

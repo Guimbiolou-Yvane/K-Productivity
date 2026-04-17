@@ -68,7 +68,7 @@ export const notificationService = {
    * Supprimer toutes les notifications
    */
   async clearAll(): Promise<void> {
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user } } = await supabase.auth.getSession().then(res => ({ data: { user: res.data.session?.user || null }, error: res.error }));
     if (!user) return;
     await supabase.from("notifications").delete().eq("user_id", user.id);
   },

@@ -19,6 +19,7 @@ export default function SharedHabitsTracker() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
   const [groups, setGroups] = useState<{group: SharedGroup, members: UserProfile[]}[]>([]);
   const [habitsByGroup, setHabitsByGroup] = useState<{ [groupId: string]: UISharedHabit[] }>({});
+  const [saveError, setSaveError] = useState<string | null>(null);
   // Ref pour éviter les stale closures dans les callbacks Realtime
   const habitsByGroupRef = useRef<{ [groupId: string]: UISharedHabit[] }>({});
 
@@ -190,6 +191,7 @@ export default function SharedHabitsTracker() {
   };
 
   const handleSaveHabit = async (data: SharedHabitFormData) => {
+    setSaveError(null);
     try {
       if (habitToEdit) {
         await sharedHabitService.updateSharedHabit(habitToEdit.id, data.name, data.category, data.frequency, data.color, data.icon, data.startDate, data.endDate, data.time || undefined);
@@ -202,10 +204,17 @@ export default function SharedHabitsTracker() {
         const newHabits = await sharedHabitService.fetchHabitsByGroup(gId);
         setHabitsByGroup(prev => ({ ...prev, [gId]: newHabits }));
       }
+      // Fermer la modale en premier, puis reset les states
       setHabitModalOpen(false);
-      setHabitToEdit(null);
-      setActiveGroupId(null);
-    } catch (e) { console.error(e); }
+      // Délai pour laisser l'animation de fermeture se terminer avant de reset
+      setTimeout(() => {
+        setHabitToEdit(null);
+        setActiveGroupId(null);
+      }, 300);
+    } catch (e: any) {
+      console.error("Erreur sauvegarde objectif :", e);
+      setSaveError(e?.message || "Une erreur est survenue lors de la sauvegarde.");
+    }
   };
 
   const handleLeaveGroup = async (groupId: string) => {
@@ -717,14 +726,15 @@ export default function SharedHabitsTracker() {
       />
       <SharedHabitModal 
         isOpen={isHabitModalOpen} 
-        onClose={() => { setHabitModalOpen(false); setHabitToEdit(null); }} 
+        onClose={() => { setHabitModalOpen(false); setTimeout(() => { setHabitToEdit(null); }, 300); }} 
         habitToEdit={habitToEdit} 
-        onSave={handleSaveHabit} 
+        onSave={handleSaveHabit}
+        saveError={saveError}
         onDelete={(habitId) => {
           if (!habitToEdit) return;
           handleDeleteHabit(habitId, habitToEdit.group_id);
           setHabitModalOpen(false);
-          setHabitToEdit(null);
+          setTimeout(() => setHabitToEdit(null), 300);
         }}
       />
             </div>

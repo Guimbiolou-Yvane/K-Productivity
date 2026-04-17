@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion } from "motion/react";
-import { User, Mail, Calendar, LogOut, Save, Shield, Pencil, Check, X, Moon, Sun, Monitor, Settings, RotateCcw, Globe, Camera, Loader2 } from "lucide-react";
+import { User, Mail, Calendar, LogOut, Save, Shield, Pencil, Check, X, Moon, Sun, Monitor, Settings, RotateCcw, Globe, Camera, Loader2, Bot } from "lucide-react";
 import ResetObjectivesModal from "@/components/ResetObjectivesModal";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -661,6 +661,40 @@ export default function ParametresPage() {
             <Monitor size={24} strokeWidth={3} className="mb-2" />
             <span className="font-bold uppercase text-sm">Système</span>
           </button>
+        </div>
+      </section>
+
+      {/* SECTION 5.5 : TELEGRAM BOT */}
+      <section className="w-full mb-8">
+        <h3 className="text-lg sm:text-xl font-black uppercase text-foreground pl-2 border-l-8 border-[#0088cc] mb-4">
+          Assistant Telegram
+        </h3>
+        <div className="neo-card">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-[#0088cc] flex items-center justify-center border-2 border-foreground shrink-0 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
+                <Bot size={20} strokeWidth={2} className="text-white" />
+              </div>
+              <div className="min-w-0">
+                <span className="font-bold text-foreground/80 block">Intelligence Artificielle</span>
+                <span className="text-xs font-bold text-foreground/50 block mt-0.5">
+                  Gérez vos tâches et habitudes directement depuis Telegram.
+                </span>
+                {profile.telegram_chat_id && (
+                  <span className="text-xs font-black text-[#1fb05a] block mt-1">✓ Compte synchronisé</span>
+                )}
+              </div>
+            </div>
+            <a
+              href={`https://t.me/${process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME || 'VOTRE_BOT'}?start=${profile.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="neo-btn !px-4 !py-2 !bg-[#0088cc] text-white text-sm flex items-center gap-2 shrink-0 self-stretch sm:self-auto justify-center"
+            >
+              <Bot size={16} strokeWidth={3} />
+              <span className="font-bold uppercase">{profile.telegram_chat_id ? 'Ouvrir Telegram' : 'Connecter'}</span>
+            </a>
+          </div>
         </div>
       </section>
 

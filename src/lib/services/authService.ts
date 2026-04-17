@@ -83,7 +83,7 @@ export const authService = {
     const {
       data: { user },
       error,
-    } = await supabase.auth.getUser();
+    } = await supabase.auth.getSession().then(res => ({ data: { user: res.data.session?.user || null }, error: res.error }));
     if (error) throw error;
     return user;
   },
@@ -100,25 +100,28 @@ export const authService = {
     return session;
   },
 
-  // ==========================================
-  // PROFIL UTILISATEUR (Table `profiles`)
-  // ==========================================
-
   /**
-   * Récupérer le profil complet de l'utilisateur connecté depuis la table `profiles`.
+   * Récupérer le complet de l'utilisateur. Retourne le fallback en mode hors-ligne.
    */
   async getProfile(): Promise<UserProfile | null> {
-    const user = await this.getUser();
+    const user = await this.getUser().catch(() => null);
     if (!user) return null;
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", user.id)
-      .single();
+    const cacheKey = `profile_${user.id}`;
 
-    if (error) throw error;
-    return data as UserProfile;
+    // On importe dynamiquement pour éviter un top-level import complexe si besoin, mais standard c'est en haut.
+    const { offlineCache } = await import("@/lib/offlineCache");
+
+    return offlineCache.withFallback(cacheKey, async () => {
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+
+      if (error) throw error;
+      return data as UserProfile;
+    });
   },
 
   /**

@@ -145,6 +145,7 @@ export default function HabitTracker({
           data.startDate,
           data.endDate,
           data.time,
+          data.linked_goal_id
         );
         setHabits(habits.map((h) => (h.id === habitToEdit.id ? updated : h)));
       } else {
@@ -157,6 +158,7 @@ export default function HabitTracker({
           data.startDate,
           data.endDate,
           data.time,
+          data.linked_goal_id
         );
         setHabits([...habits, added]);
       }

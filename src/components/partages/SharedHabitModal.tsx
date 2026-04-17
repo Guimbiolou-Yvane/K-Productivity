@@ -22,9 +22,10 @@ interface SharedHabitModalProps {
   habitToEdit?: UISharedHabit | null;
   onSave: (data: SharedHabitFormData) => void;
   onDelete?: (habitId: string) => void;
+  saveError?: string | null;
 }
 
-export default function SharedHabitModal({ isOpen, onClose, habitToEdit, onSave, onDelete }: SharedHabitModalProps) {
+export default function SharedHabitModal({ isOpen, onClose, habitToEdit, onSave, onDelete, saveError }: SharedHabitModalProps) {
   const [name, setName] = useState("");
   const [category, setCategory] = useState<HabitCategory>("GÉNÉRAL");
   const [frequency, setFrequency] = useState<string[]>(DAYS);
@@ -339,6 +340,12 @@ export default function SharedHabitModal({ isOpen, onClose, habitToEdit, onSave,
                 })}
               </div>
             </div>
+
+            {saveError && (
+              <div className="bg-red-100 border-2 border-red-500 text-red-700 font-bold text-sm px-3 py-2 rounded">
+                ⚠️ {saveError}
+              </div>
+            )}
 
             <button type="submit" className="neo-btn bg-primary mt-2">
               {habitToEdit ? "Sauvegarder les modifications" : "Ajouter au groupe"}

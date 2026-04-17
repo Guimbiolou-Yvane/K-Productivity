@@ -1,34 +1,37 @@
 import { Todo } from "@/lib/models/todo";
 import { supabase } from "@/lib/supabase/client";
+import { offlineCache } from "@/lib/offlineCache";
 
 export const todoService = {
   // Fetch only active to-dos (created within the last 24 hours)
   async fetchTodos(userId?: string): Promise<Todo[]> {
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await supabase.auth.getSession().then(res => ({ data: { user: res.data.session?.user || null }, error: res.error }));
     if (!user && !userId) return [];
-
     const targetUserId = userId || user?.id;
 
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const cacheKey = `todos_${targetUserId}`;
+    return offlineCache.withFallback(cacheKey, async () => {
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-    const { data, error } = await supabase
-      .from("todos")
-      .select("*")
-      .eq("user_id", targetUserId)
-      .gte("created_at", yesterday) // Extra filter on frontend side for robustness
-      .order("created_at", { ascending: true });
+      const { data, error } = await supabase
+        .from("todos")
+        .select("*")
+        .eq("user_id", targetUserId)
+        .gte("created_at", yesterday)
+        .order("created_at", { ascending: true });
 
-    if (error) throw error;
-    return data || [];
+      if (error) throw error;
+      return data || [];
+    }, 30 * 60 * 1000); // 30 min de cache pour les todos
   },
 
   // Add a new To-Do item
   async addTodo(title: string, time?: string): Promise<Todo> {
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await supabase.auth.getSession().then(res => ({ data: { user: res.data.session?.user || null }, error: res.error }));
     if (!user) throw new Error("User not authenticated");
 
     const insertData: { title: string; user_id: string; time?: string } = {
